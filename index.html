@@ -1084,8 +1084,8 @@ function seriesText(){
 /* ---------------- special teams: the kick meter ---------------- */
 // a needle sweeps the bar; tap to stop it in the green. 4th down is gameplay now.
 function startKickMeter(type){
-  const distYds=Math.round(G.losYd+17);
-  const prob=type==='fg'?clamp(1.08-distYds/58,0.10,0.92):0.5;
+  const distYds=type==='xp'?19:Math.round(G.losYd+17); // XP: snap from the 2, 1994 rules
+  const prob=type==='fg'?clamp(1.08-distYds/58,0.10,0.92):(type==='xp'?0.62:0.5);
   G.kick={type,distYds,window:prob,pos:0,dir:1,t:0};
   setState('kickmeter');
   sfx.hike();
@@ -1093,7 +1093,13 @@ function startKickMeter(type){
 function resolveKick(){
   const k=G.kick; G.kick=null;
   const offCenter=Math.abs(k.pos-0.5)*2; // 0 = perfect
-  if(k.type==='fg'){
+  if(k.type==='xp'){
+    if(offCenter<=k.window){ G.score.you+=1; sfx.firstDown();
+      queueBanner(['EXTRA POINT','GOOD. AS EXPECTED.','+1'],()=>endOfYourDrive());
+    } else { sfx.fail();
+      queueBanner(['THE EXTRA POINT...','HE MISSED THE AUTOMATIC ONE.','GROUNDS FOR DIVORCE'],()=>endOfYourDrive());
+    }
+  } else if(k.type==='fg'){
     if(offCenter<=k.window){ G.score.you+=3; sfx.td(); sfx.cheer();
       queueBanner([k.distYds+' YD FIELD GOAL','IS GOOD!','+3'],()=>endOfYourDrive());
     } else { sfx.fail();
@@ -1837,7 +1843,7 @@ function setupPlaycallButtons(){
   ];
   if(G.convChoice){ // after a touchdown: take the point or take the risk
     defs.length=0;
-    defs.push({id:'play_xp',label:'KICK THE XP',sub:'+1. AUTOMATIC. SENSIBLE.'});
+    defs.push({id:'play_xp',label:'KICK THE XP',sub:'+1. ALMOST AUTOMATIC.'});
     defs.push({id:'play_2pt',label:'GO FOR 2',sub:'ONE SNAP FROM THE 2. VERY HARD.'});
   } else if(G.down===4){
     defs.push({id:'play_punt',label:'PUNT',sub:'LIVE TO FIGHT AGAIN'});
@@ -1879,8 +1885,7 @@ onButton=function(id){
   if(!id) return;
   if(G.state==='playcall'){
     sfx.ui();
-    if(id==='play_xp'){ G.convChoice=false; G.score.you+=1;
-      queueBanner(['EXTRA POINT','GOOD. OBVIOUSLY.','+1'],()=>endOfYourDrive()); return; }
+    if(id==='play_xp'){ G.convChoice=false; startKickMeter('xp'); return; }
     if(id==='play_2pt'){ G.convChoice=false; G.conversion=true;
       G.losYd=2; G.down=1; G.toGo=2; G.firstYd=0;
       buttons=[]; return; } // playcall repopulates with run/pass from the 2
@@ -2019,11 +2024,11 @@ function frame(now){
       if(k.pos>1){k.pos=1;k.dir=-1;} if(k.pos<0){k.pos=0;k.dir=1;}
       drawField(G.camY); drawHUD(); drawFxScreen();
       ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,H*0.3,W,H*0.34);
-      pixelText(k.type==='fg'?k.distYds+' YD FIELD GOAL':'PUNT',W/2,H*0.36,28,'#fff200','#000',true);
+      pixelText(k.type==='fg'?k.distYds+' YD FIELD GOAL':(k.type==='xp'?'EXTRA POINT':'PUNT'),W/2,H*0.36,28,'#fff200','#000',true);
       pixelText('TAP TO KICK!',W/2,H*0.42,20,'#fff','#000',true);
       const bx=W*0.12,bw=W*0.76,by=H*0.50;
       ctx.fillStyle='rgba(255,255,255,0.2)';ctx.fillRect(bx,by,bw,20);
-      const win=k.type==='fg'?k.window:0.5;
+      const win=k.type==='punt'?0.5:k.window;
       ctx.fillStyle='rgba(125,255,106,0.5)';
       ctx.fillRect(bx+bw*(0.5-win/2),by,bw*win,20);
       ctx.fillStyle='#fff';ctx.fillRect(bx+bw*k.pos-2,by-5,4,30);
