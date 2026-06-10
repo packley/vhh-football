@@ -9,7 +9,7 @@
   html,body{margin:0;padding:0;background:#0b0b12;height:100%;overflow:hidden;touch-action:none;
     -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;}
   #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#0b0b12;}
-  canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;}
+  canvas{image-rendering:pixelated;image-rendering:crisp-edges;display:block;touch-action:none;}
 </style>
 </head>
 <body>
@@ -61,11 +61,24 @@ function audioInit(){
   if(AU.on) return;
   try{
     AU.ctx=new (window.AudioContext||window.webkitAudioContext)();
-    AU.master=AU.ctx.createGain(); AU.master.gain.value=0.5; AU.master.connect(AU.ctx.destination);
+    AU.master=AU.ctx.createGain(); AU.master.gain.value=0.5;
+    // compressor keeps stacked carnage from clipping into mush on phone speakers
+    let out=AU.ctx.destination;
+    try{
+      const comp=AU.ctx.createDynamicsCompressor();
+      comp.threshold.value=-18; comp.knee.value=20; comp.ratio.value=6;
+      comp.connect(AU.ctx.destination); out=comp;
+    }catch(e){}
+    AU.master.connect(out);
+    // one shared noise bed; every noise() call plays a random slice of it
+    AU.noiseBuf=AU.ctx.createBuffer(1,AU.ctx.sampleRate*2,AU.ctx.sampleRate);
+    const nd=AU.noiseBuf.getChannelData(0);
+    for(let i=0;i<nd.length;i++) nd[i]=Math.random()*2-1;
     AU.on=true;
   }catch(e){}
+  try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){} // play through the iPhone mute switch
   try{ if(window.speechSynthesis) speechSynthesis.getVoices(); }catch(e){} // warm the TTS voice list
-  decodeClips();
+  setTimeout(decodeClips,0); // keep the 150KB base64 decode off the gesture-critical path
 }
 // iOS: audio must be unlocked INSIDE a touch handler — resume + play a silent buffer
 function unlockAudio(){
@@ -100,21 +113,18 @@ function tone(freq,dur,type,vol,slideTo,when){
   o.connect(g); g.connect(AU.master); o.start(t0); o.stop(t0+dur+0.02);
 }
 function noise(dur,vol,filterFreq,when){
-  if(!AU.on) return;
+  if(!AU.on||!AU.noiseBuf) return;
   const t0=AU.ctx.currentTime+(when||0);
-  const len=Math.floor(AU.ctx.sampleRate*dur);
-  const buf=AU.ctx.createBuffer(1,len,AU.ctx.sampleRate);
-  const d=buf.getChannelData(0);
-  for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*(1-i/len);
-  const src=AU.ctx.createBufferSource(); src.buffer=buf;
+  const src=AU.ctx.createBufferSource(); src.buffer=AU.noiseBuf;
   const f=AU.ctx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=filterFreq||900;
   const g=AU.ctx.createGain(); g.gain.setValueAtTime(vol||0.3,t0);
   g.gain.exponentialRampToValueAtTime(0.001,t0+dur);
-  src.connect(f); f.connect(g); g.connect(AU.master); src.start(t0);
+  src.connect(f); f.connect(g); g.connect(AU.master);
+  src.start(t0,Math.random()*(2-Math.min(dur,1.9)),dur);
 }
 const sfx={
-  crunch(){ noise(0.22,0.9,700); tone(150,0.28,'sine',0.5,38); tone(90,0.18,'square',0.25,30); },
-  megacrunch(){ noise(0.3,1.0,600); noise(0.4,0.5,300,0.05); tone(170,0.4,'sine',0.6,30); tone(60,0.35,'sawtooth',0.3,24); },
+  crunch(){ const v=rnd(0.85,1.15),fq=rnd(0.8,1.25); noise(0.22,0.9,700*fq); tone(150*v,0.28,'sine',0.5,38*v); tone(90*v,0.18,'square',0.25,30); },
+  megacrunch(){ const v=rnd(0.85,1.15),fq=rnd(0.8,1.25); noise(0.3,1.0,600*fq); noise(0.4,0.5,300*fq,0.05); tone(170*v,0.4,'sine',0.6,30); tone(60*v,0.35,'sawtooth',0.3,24); },
   thud(){ noise(0.1,0.35,500); tone(110,0.12,'sine',0.3,60); },
   whistle(){ tone(2300,0.35,'square',0.07); tone(2800,0.35,'square',0.05); },
   hike(){ tone(220,0.08,'square',0.12); tone(180,0.08,'square',0.12,null,0.1); },
@@ -243,7 +253,7 @@ function speak(segs,opts,fallback){
         try{ speechSynthesis.cancel(); }catch(e){}
         fallback();
       }
-    },450);
+    },900);
   }catch(e){ ttsDebug='throw'; if(fallback)fallback(); }
 }
 // vowel formants: oo[320,800] ih[420,1800] ee[290,2200] ow glide[650->320,1150->800]
@@ -329,6 +339,7 @@ function stopIntroMusic(){
 /* ---------------- input ---------------- */
 const keys={};
 window.addEventListener('keydown',e=>{
+  if(e.repeat) return; // held keys must not machine-gun through menus
   keys[e.key.toLowerCase()]=true;
   if(['arrowup','arrowdown','arrowleft','arrowright',' '].includes(e.key.toLowerCase())) e.preventDefault();
   onPressKey(e.key.toLowerCase());
@@ -354,6 +365,7 @@ function hitButton(p){
 }
 cv.addEventListener('pointerdown',e=>{
   e.preventDefault(); audioInit(); unlockAudio();
+  try{ cv.setPointerCapture(e.pointerId); }catch(err){} // keep the stick alive off-canvas
   // the boot tap must schedule the intro score HERE, inside the gesture, or iOS mutes it
   if(G.state==='boot'){ unlockTTS(); startIntroMusic(); }
   const p=evtPos(e);
@@ -373,18 +385,19 @@ cv.addEventListener('pointermove',e=>{
     stick.dx=p.x-stick.sx; stick.dy=p.y-stick.sy;
     const m=Math.hypot(stick.dx,stick.dy);
     // steering: any drag sets the run direction; he keeps running after you let go
-    if(m>10&&G.state==='live') G.runDir={x:stick.dx/m,y:stick.dy/m};
+    if(m>20&&G.state==='live') G.runDir={x:stick.dx/m,y:stick.dy/m}; // matches the tap threshold: a gesture steers OR taps, never both
     // anchor trails so curving drags steer smoothly
     if(m>STICK_R){ stick.sx=p.x-stick.dx/m*STICK_R; stick.sy=p.y-stick.dy/m*STICK_R; stick.dx=stick.dx/m*STICK_R; stick.dy=stick.dy/m*STICK_R; }
   }
 });
-function endPointer(e){
+function endPointer(e,cancel){
   audioInit(); unlockAudio(); // some iOS versions only unlock audio on touch RELEASE
   if(stick.active&&e.pointerId===stick.id){
     // quick tap with no movement = throw to the receiver you tapped
+    // (but iOS pointercancel — system gestures, palm rejection — must never count as a tap)
     const dx=stick.lastX-stick.downX, dy=stick.lastY-stick.downY;
     const quick=performance.now()-stick.downT<280;
-    if(quick&&Math.hypot(dx,dy)<20)
+    if(!cancel&&quick&&Math.hypot(dx,dy)<20)
       handleLiveTap({x:stick.lastX,y:stick.lastY});
     stick.active=false; stick.dx=0; stick.dy=0; // runDir persists — he keeps running
   }
@@ -406,7 +419,8 @@ function handleLiveTap(p){
   tryDive(); // no throw on the table: a tap means lay out
 }
 cv.addEventListener('pointerup',endPointer);
-cv.addEventListener('pointercancel',endPointer);
+cv.addEventListener('pointercancel',e=>endPointer(e,true));
+window.addEventListener('pointerup',endPointer); // backstop if capture is unsupported
 cv.addEventListener('contextmenu',e=>e.preventDefault());
 // belt and suspenders: any touch release anywhere also tries the unlock
 document.addEventListener('touchend',()=>{ audioInit(); unlockAudio(); },{passive:true});
@@ -425,7 +439,7 @@ function moveVec(){
 }
 
 /* ---------------- FX ---------------- */
-let shake=0, hitstop=0, flashWhite=0;
+let shake=0, hitstop=0, flashWhite=0, zoomPunch=0;
 const fxTexts=[];   // {text,x,y,t,dur,size,color,wob}
 const parts=[];     // particles
 function bigText(text,opts){
@@ -434,8 +448,19 @@ function bigText(text,opts){
     size:opts.size||40,color:opts.color||'#fff200',wob:opts.wob!==false});
 }
 function spawnHelmet(x,y,color,stripe){
+  const golden=Math.random()<0.01; // 1-in-100: a helmet for the ages
   parts.push({kind:'helmet',x,y,vx:rnd(-180,180),vy:rnd(-260,-120),rot:0,vr:rnd(-12,12),
-    t:0,dur:1.6,color,stripe});
+    t:0,dur:1.6,color:golden?'#ffd700':color,stripe:golden?'#fff':stripe});
+  if(golden) bigText('THAT ONE’S GOING TO CANTON.',{y:H*0.55,size:20,color:'#ffd700',dur:1.6});
+}
+function spawnBulbs(n){ // camera flashes in the stands
+  for(let i=0;i<(n||14);i++){
+    const x=Math.random()<0.5?rnd(0,FX0-16):rnd(FX1+16,W);
+    parts.push({kind:'bulb',x,y:G.camY+rnd(0,H),t:0,dur:0.7,blinkAt:rnd(0,0.5)});
+  }
+}
+function spawnGhost(p){
+  parts.push({kind:'ghost',x:p.x,y:p.y,t:0,dur:0.22,color:p.team.jersey});
 }
 function spawnStars(x,y,n){
   for(let i=0;i<(n||8);i++){
@@ -449,23 +474,37 @@ function spawnDust(x,y){
 }
 const HIT_SHOUTS=['VERY HARD HIT!','BONE-RATTLER!!','CRUNCH-O-RAMA!','HE FELT THAT ONE!',
   'OH THE HUMANITY!','ABSOLUTELY LEVELED!','PANCAKED!!','SEE YOU IN 1995!','THAT’S A LAWSUIT!','DE-CLEATED!!',
-  'RIGHT IN THE ASSHOLE!','SUCK A DICK, SON!'];
+  'RIGHT IN THE ASSHOLE!','SUCK A DICK, SON!','HIS ANCESTORS FELT THAT!','CALL HIS MOTHER!',
+  'HE’S DEAD! ...HE’S FINE!','INTO THE SHADOW REALM!','SOMEBODY CALL OSHA!',
+  'THAT’S A FELONY IN 9 STATES!','EAT TURF, DIPSHIT!'];
 function carnage(x,y,team,mega){
-  hitstop=mega?0.30:0.20; shake=mega?18:12; flashWhite=mega?0.18:0.10;
+  hitstop=mega?0.30:0.12; shake=mega?18:12; flashWhite=mega?0.18:0.10;
+  zoomPunch=mega?0.10:0.05;
   if(mega) sfx.megacrunch(); else sfx.crunch();
+  try{ navigator.vibrate&&navigator.vibrate(mega?[70,40,90]:45); }catch(e){}
   spawnHelmet(x,y,team.helmet,team.stripe);
   spawnStars(x,y,mega?14:9); spawnDust(x,y);
-  bigText(pick(HIT_SHOUTS),{y:H*0.34,size:mega?46:38});
+  if(mega) spawnBulbs(10);
+  const shout=pick(HIT_SHOUTS);
+  bigText(shout,{y:H*0.34,size:mega?46:38});
   if(mega) sfx.crowd();
+  return shout;
 }
 function updateFx(dt){
   shake=Math.max(0,shake-dt*40);
   flashWhite=Math.max(0,flashWhite-dt);
+  zoomPunch=Math.max(0,zoomPunch-dt*0.5);
+  G.shoutCd=Math.max(0,(G.shoutCd||0)-dt);
   for(let i=fxTexts.length-1;i>=0;i--){ fxTexts[i].t+=dt; if(fxTexts[i].t>fxTexts[i].dur)fxTexts.splice(i,1); }
   for(let i=parts.length-1;i>=0;i--){
     const p=parts[i]; p.t+=dt;
-    if(p.kind==='helmet'){ p.vy+=700*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.rot+=p.vr*dt; }
-    else { p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.92; p.vy*=0.92; }
+    if(p.kind==='helmet'){
+      if(p.landed){} // helmet litter: it stays where it fell
+      else if(p.t>1.0){ p.landed=true; p.dur=7; p.vx=0; p.vy=0; p.vr=0; }
+      else { p.vy+=700*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.rot+=p.vr*dt; }
+    }
+    else if(p.kind==='bulb'||p.kind==='ghost'){} // stationary
+    else { const d2=Math.pow(0.92,dt*60); p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=d2; p.vy*=d2; }
     if(p.t>p.dur)parts.splice(i,1);
   }
 }
@@ -474,8 +513,15 @@ function drawFxWorld(camY){
     const sy=p.y-camY;
     if(p.kind==='helmet'){
       ctx.save(); ctx.translate(p.x,sy); ctx.rotate(p.rot);
+      ctx.globalAlpha=clamp(p.dur-p.t,0,1); // litter fades out at the end
       drawHelmetIcon(0,0,10,p.color,p.stripe);
-      ctx.restore();
+      ctx.globalAlpha=1; ctx.restore();
+    } else if(p.kind==='bulb'){
+      if(p.t>p.blinkAt&&p.t<p.blinkAt+0.12){ ctx.fillStyle='#fff'; ctx.fillRect(p.x,sy,3,3); }
+    } else if(p.kind==='ghost'){
+      ctx.globalAlpha=0.25*(1-p.t/p.dur);
+      ctx.fillStyle=p.color; ctx.fillRect(p.x-5,sy-8,10,14);
+      ctx.globalAlpha=1;
     } else if(p.kind==='star'){
       ctx.fillStyle='#fff200';
       const s=4*(1-p.t/p.dur)+1;
@@ -506,8 +552,10 @@ function drawFxScreen(){
 /* ---------------- chunky text ---------------- */
 function pixelText(str,x,y,size,fill,outline,center){
   ctx.font='bold '+size+'px "Courier New",monospace';
-  const tw=ctx.measureText(str).width;
-  if(tw>W-16){ size=Math.max(8,size*(W-16)/tw); ctx.font='bold '+size+'px "Courier New",monospace'; }
+  if(str.length*size*0.62>W-16){ // only measure strings that might overflow
+    const tw=ctx.measureText(str).width;
+    if(tw>W-16){ size=Math.max(8,size*(W-16)/tw); ctx.font='bold '+size+'px "Courier New",monospace'; }
+  }
   ctx.textAlign=center?'center':'left';
   ctx.textBaseline='middle';
   if(outline){ ctx.lineWidth=Math.max(3,size/7); ctx.strokeStyle=outline; ctx.strokeText(str,x,y); }
@@ -609,7 +657,11 @@ const G={
   result:'',
   longestPlay:0,
 };
-function setState(s){ G.state=s; G.t=0; buttons=[]; }
+function setState(s){
+  G.state=s; G.t=0; buttons=[];
+  if(s==='title') G.tf={};          // re-arm the title smash one-shots
+  if(s==='gameover') liteParts.length=0; // no stale fireworks from last game
+}
 
 /* ---------------- formations / play start ---------------- */
 function newPlayer(team,x,yd,role){
@@ -620,6 +672,7 @@ function newPlayer(team,x,yd,role){
 function setupPlay(type){
   G.playType=type; G.players=[]; G.ball=null; G.passWindow=false; G.pastLine=false;
   G.truckCd=0; G.catchGrace=0; G.catchBurst=0; G.returnPlay=false; G.kickFlight=null; G.runDir=null; G.handoffPending=false; G.dive=null;
+  G.stumbleT=0; G.cavalry=false; G.crossT=0;
   const L=G.losYd;
   const P=G.players;
   // offense
@@ -723,6 +776,11 @@ function onPressKey(k){
     if(k==='shift') tryDive();
   }
   if((k==='enter'||k===' ')&&['title','intro','howto','dead','gameover'].includes(G.state)) advanceTap();
+  if(G.state==='playcall'&&/^[1-5]$/.test(k)){ // keyboard play-calling
+    const b=buttons[+k-1];
+    if(b) onButton(b.id);
+  }
+  if(G.state==='kickmeter'&&(k===' '||k==='enter')) taps.push({x:W/2,y:H/2});
 }
 function startSnap(type){
   setState('snap'); G.pendingPlay=type;
@@ -731,7 +789,7 @@ function startSnap(type){
 /* ---------------- truck & throw ---------------- */
 function doTruck(){
   if(!G.playLive||G.truckCd>0||!G.carrier) return;
-  G.truckCd=1.6;
+  G.truckCd=G.rampage>0?0.25:2.0; // berserk mode barely reloads
   const c=G.carrier;
   let best=null,bd=46;
   for(const p of G.players){
@@ -741,12 +799,27 @@ function doTruck(){
   }
   if(best){
     const dx=best.x-c.x, dy=best.y-c.y, m=Math.max(1,Math.hypot(dx,dy));
-    best.state='flying'; best.stateT=0.55; best.vx=dx/m*420; best.vy=dy/m*420; best.spinRot=0;
+    const counter=best.state==='dive'; // trucking a mid-air tackler: art
+    const v=counter?630:420;
+    best.state='flying'; best.stateT=counter?0.7:0.55; best.vx=dx/m*v; best.vy=dy/m*v; best.spinRot=0;
     best.helmetOn=false;
-    carnage(best.x,best.y,TEAM_CPU,true);
-    G.vhhCount++;
-    bigText('+1 VERY HARD HIT',{y:H*0.46,size:20,color:'#7dff6a',dur:0.9});
-  } else { sfx.thud(); spawnDust(c.x,c.y); }
+    const shout=carnage(best.x,best.y,TEAM_CPU,true);
+    G.vhhCount+=counter?2:1;
+    bigText(counter?'+2 COUNTER-TRUCK!!':'+1 VERY HARD HIT',{y:H*0.46,size:counter?24:20,color:'#7dff6a',dur:0.9});
+    // announcer growls it about a third of the time
+    if(Math.random()<0.33&&!G.shoutCd){ G.shoutCd=4; speak(shout.toLowerCase().replace(/[!.’']/g,''),{pitch:0.7,rate:0.95,dur:1.0}); }
+    // every 3rd VHH: RAMPAGE
+    if(G.vhhCount>0&&Math.floor(G.vhhCount/3)>Math.floor((G.vhhCount-(counter?2:1))/3)){
+      G.rampage=6; sfx.cheer();
+      bigText('HE’S GONE BERSERK!!',{y:H*0.28,size:34,color:'#ff5050',dur:1.4});
+    }
+    if(G.vhhCount===5) bigText('THE COMMISSIONER HAS BEEN NOTIFIED',{y:H*0.55,size:16,color:'#9fd8ff',dur:1.6});
+    if(G.vhhCount===10) bigText('THE LEAGUE HAS DISBANDED ITS SAFETY COMMITTEE',{y:H*0.55,size:15,color:'#9fd8ff',dur:1.8});
+  } else { // whiff: you lunged at nothing and your legs know it
+    sfx.thud(); spawnDust(c.x,c.y);
+    G.stumbleT=0.4;
+    bigText('WHIFFED!',{y:H*0.5,size:16,color:'#999',dur:0.5});
+  }
 }
 function tryDive(){
   const c=G.carrier;
@@ -796,6 +869,7 @@ function setupReturn(kind){
   G.playType='return'; G.returnPlay=true; G.players=[]; G.ball=null;
   G.passWindow=false; G.pastLine=false;
   G.truckCd=0; G.catchGrace=0; G.catchBurst=0; G.runDir=null; G.dive=null;
+  G.stumbleT=0; G.cavalry=false; G.crossT=0;
   const startYd=kind==='kick'?rnd(88,96):rnd(58,68);
   G.losYd=startYd; G.down=1; G.toGo=10; G.firstYd=startYd-10;
   const ret=newPlayer(TEAM_YOU,rnd(180,300),startYd,'RET');
@@ -828,13 +902,29 @@ function setupReturn(kind){
 }
 
 function recordGain(yds){ if(yds>G.longestPlay) G.longestPlay=Math.round(yds); }
+const TD_QUIPS=['PUT IT ON THE FRIDGE!','1994 WOULD BE PROUD!','SUCK IT, BONE COUNTY!','SEE YOU IN THE END ZONE, NERDS!'];
 function afterPlay(){
   const o=G.deadOpts||{};
   const wasReturn=G.returnPlay; G.returnPlay=false;
+  // two-point conversion attempt resolves here
+  if(G.conversion){
+    G.conversion=false;
+    if(o.td){ G.score.you+=2; sfx.td();
+      queueBanner(['GOOD!! +2','VERY HARD INDEED'],()=>endOfYourDrive());
+    } else { sfx.fail();
+      queueBanner(['NO GOOD','GREED IS A SIN'],()=>endOfYourDrive());
+    }
+    return;
+  }
   if(o.td){
     recordGain(G.losYd); // scored from the line of scrimmage (or the catch spot, on returns)
-    G.score.you+=7; sfx.td();
-    queueBanner([wasReturn?'RETURN TOUCHDOWN!!':'TOUCHDOWN','SKULLCRUSHERS!','+7'],()=>endOfYourDrive());
+    G.score.you+=6; sfx.td();
+    if(G.ot){ // sudden death: the six wins it, skip the formality
+      queueBanner(['TOUCHDOWN','SKULLCRUSHERS WIN IT!','+6'],()=>endOfYourDrive());
+      return;
+    }
+    queueBanner([wasReturn?'RETURN TOUCHDOWN!!':'TOUCHDOWN',pick(TD_QUIPS),'+6'],
+      ()=>{ G.convChoice=true; setState('playcall'); });
     return;
   }
   if(o.turnover){ queueBanner([o.turnover],()=>endOfYourDrive()); return; }
@@ -843,13 +933,14 @@ function afterPlay(){
     recordGain(G.losYd-s2); // return yardage counts
     G.losYd=s2; G.down=1; G.toGo=Math.min(10,s2); G.firstYd=Math.max(0,s2-10);
     const own=s2>50;
-    queueBanner(['RETURNED TO THE',(own?'OWN ':'BRUISERS ')+Math.round(own?100-s2:s2)+' YARD LINE'],()=>setState('playcall'));
+    queueBanner(['RETURNED TO THE',(own?'OWN ':'BRUISERS ')+Math.round(own?100-s2:s2)+' YARD LINE'],
+      ()=>G.clock<=0?endOfYourDrive():setState('playcall'));
     return;
   }
   const spotYd=clamp(y2yd(o.spotY!==undefined?o.spotY:G.carrier.y),0.5,109);
   if(spotYd>=100){ // brought down in your own end zone (returns exempt — handled above)
     G.score.cpu+=2; sfx.fail();
-    queueBanner(['SAFETY!','TACKLED IN YOUR OWN END ZONE','BRUISERS +2'],()=>endOfYourDrive());
+    queueBanner(['SAFETY!','IN YOUR OWN HOUSE?!','BRUISERS +2'],()=>endOfYourDrive());
     return;
   }
   const gain=G.losYd-spotYd;
@@ -885,16 +976,24 @@ function queueBanner(lines,next){
 function startYourDrive(mode){
   mode=mode||'kickoff';
   G.clock=180; // your 3:00 of the quarter — the Bruisers' half happens off-screen
-  const q='Q'+G.quarter+(G.ot?' — OVERTIME':'');
-  if(mode==='punt'){
-    queueBanner([q,'BRUISERS PUNT IT AWAY','RETURN IT!'],()=>setupReturn('punt'));
-  } else if(mode==='turnover'){
-    const spot=Math.round(rnd(45,68));
-    G.losYd=spot; G.down=1; G.toGo=10; G.firstYd=spot-10;
-    queueBanner([q,'YOUR DEFENSE DELIVERS!','SKULLCRUSHERS BALL, GREAT FIELD POSITION'],()=>setState('playcall'));
-  } else {
-    queueBanner([q,'KICKOFF!','RETURN IT!'],()=>setupReturn('kick'));
-  }
+  G.fdDraw=undefined;
+  const q='Q'+G.quarter+(G.ot?' — OVERTIME':'')+' — YOUR POSSESSION';
+  const stakes=G.quarter>=4?'MAKE IT COUNT. NO REFUNDS.':'MAKE IT COUNT';
+  const go=()=>{
+    if(mode==='punt'){
+      queueBanner([q,'BRUISERS PUNT IT AWAY','RETURN IT!'],()=>setupReturn('punt'));
+    } else if(mode==='turnover'){
+      const spot=Math.round(rnd(45,68));
+      G.losYd=spot; G.down=1; G.toGo=10; G.firstYd=spot-10;
+      queueBanner([q,'YOUR DEFENSE DELIVERS!',stakes],()=>setState('playcall'));
+    } else {
+      queueBanner([q,'KICKOFF!','RETURN IT!'],()=>setupReturn('kick'));
+    }
+  };
+  if(G.quarter===3&&!G.halftimeDone){ // the halftime show
+    G.halftimeDone=true;
+    queueBanner(['HALFTIME SHOW: CANCELED.','THE BAND IS SCARED.'],go);
+  } else go();
 }
 function modeFromSim(){
   switch(G.lastSimOutcome){
@@ -915,6 +1014,8 @@ const SIM_FLAVOR=[
   'BRUISERS GO HURRY-UP...',
   'SCREEN PASS DEVELOPING...',
   'QB SCRAMBLES AROUND...',
+  'BRUISERS QB AUDIBLES TO "PLEASE NO"...',
+  'THEIR COACH IS JUST POINTING AND SCREAMING...',
 ];
 const SIM_DEF=[
   'YOUR GUY EXPLODES THE PLAY!',
@@ -925,11 +1026,22 @@ const SIM_DEF=[
 function startSimDrive(){
   const roll=Math.random();
   let outcome,pts=0;
-  if(roll<0.30){outcome='td';pts=7;}
-  else if(roll<0.52){outcome='fg';pts=3;}
-  else if(roll<0.66){outcome='stuffed';}
-  else {outcome='punt';}
+  const desperate=G.score.cpu-G.score.you>=9; // rubber band: your defense plays angry when you're down big
+  if(desperate){
+    if(roll<0.22){outcome='td';pts=7;}
+    else if(roll<0.40){outcome='fg';pts=3;}
+    else if(roll<0.64){outcome='stuffed';}
+    else {outcome='punt';}
+  } else {
+    if(roll<0.30){outcome='td';pts=7;}
+    else if(roll<0.52){outcome='fg';pts=3;}
+    else if(roll<0.66){outcome='stuffed';}
+    else {outcome='punt';}
+  }
   G.sim={t:0,step:0,outcome,pts,lines:[pick(SIM_FLAVOR),pick(SIM_FLAVOR)]};
+  if(desperate) G.sim.lines[0]='YOUR DEFENSE IS PLAYING ANGRY...';
+  // Q4/OT: you get ONE shot to blow the play up yourself
+  G.sim.qte=(G.quarter>=4)?{pos:0,dir:1,done:false,hit:false}:null;
   G.sim.resultLines=simResultLines(); // pick once — re-rolling every frame made the text strobe
   setState('simdrive');
 }
@@ -951,25 +1063,52 @@ function endQuarter(){
 }
 function finishGame(){
   G.result=G.score.you>G.score.cpu?'win':'lose';
+  // the all-time series: receipts for the group chat, kept since 1994 (allegedly)
+  try{
+    const s=JSON.parse(localStorage.getItem('vhh_series')||'{"w":0,"l":0}');
+    s[G.result==='win'?'w':'l']++;
+    localStorage.setItem('vhh_series',JSON.stringify(s));
+    G.series=s;
+  }catch(e){}
   setState('gameover');
   if(G.result==='win'){sfx.td();sfx.crowd();} else sfx.fail();
 }
+function seriesText(){
+  try{
+    const s=G.series||JSON.parse(localStorage.getItem('vhh_series')||'null');
+    if(s&&(s.w||s.l)) return 'ALL-TIME SERIES SINCE 1994: '+s.w+'—'+s.l;
+  }catch(e){}
+  return null;
+}
 
-/* ---------------- special teams ---------------- */
-function tryFG(){
+/* ---------------- special teams: the kick meter ---------------- */
+// a needle sweeps the bar; tap to stop it in the green. 4th down is gameplay now.
+function startKickMeter(type){
   const distYds=Math.round(G.losYd+17);
-  const prob=clamp(1.08-distYds/58,0.08,0.97);
-  const good=Math.random()<prob;
-  if(good){ G.score.you+=3; sfx.td();
-    queueBanner([distYds+' YD FIELD GOAL','IS GOOD!','+3'],()=>endOfYourDrive());
-  } else { sfx.fail();
-    queueBanner([distYds+' YD FIELD GOAL',pick(['WIDE RIGHT!','WIDE LEFT!','DOINK! OFF THE POST!'])],()=>endOfYourDrive());
+  const prob=type==='fg'?clamp(1.08-distYds/58,0.10,0.92):0.5;
+  G.kick={type,distYds,window:prob,pos:0,dir:1,t:0};
+  setState('kickmeter');
+  sfx.hike();
+}
+function resolveKick(){
+  const k=G.kick; G.kick=null;
+  const offCenter=Math.abs(k.pos-0.5)*2; // 0 = perfect
+  if(k.type==='fg'){
+    if(offCenter<=k.window){ G.score.you+=3; sfx.td(); sfx.cheer();
+      queueBanner([k.distYds+' YD FIELD GOAL','IS GOOD!','+3'],()=>endOfYourDrive());
+    } else { sfx.fail();
+      queueBanner([k.distYds+' YD FIELD GOAL',
+        pick(['WIDE RIGHT!','WIDE LEFT!','DOINK! OFF THE POST!','SHANKED INTO THE PARKING LOT!','HE HIT THE MASCOT. THE MASCOT IS DOWN.'])],
+        ()=>endOfYourDrive());
+    }
+  } else { // punt: accuracy = hang time and distance
+    const yds=Math.round(34+(1-offCenter)*26);
+    sfx.thud();
+    queueBanner([yds+' YARD PUNT',offCenter<0.25?'ABSOLUTE MOONSHOT':'GOOD COVERAGE'],()=>endOfYourDrive());
   }
 }
-function doPunt(){
-  sfx.thud();
-  queueBanner(['BOOMING PUNT','GOOD COVERAGE'],()=>endOfYourDrive());
-}
+function tryFG(){ startKickMeter('fg'); }
+function doPunt(){ startKickMeter('punt'); }
 
 /* ---------------- live play update ---------------- */
 function updateLive(dt){
@@ -977,7 +1116,22 @@ function updateLive(dt){
   G.truckCd=Math.max(0,G.truckCd-dt);
   // move carrier
   const mv=moveVec();
+  const preClock=G.clock;
   G.clock=Math.max(0,G.clock-dt); // clock runs while the play is live
+  if(G.quarter>=4&&G.clock<15&&G.clock>0&&Math.ceil(G.clock)!==Math.ceil(preClock))
+    tone(1100,0.05,'square',0.08); // final-seconds dread tick
+  G.stumbleT=Math.max(0,(G.stumbleT||0)-dt);
+  G.rampage=Math.max(0,(G.rampage||0)-dt);
+  // past the line and still up: the defense eventually sends everyone
+  if(c.hasBall&&c.y<yd2y(G.losYd)&&!G.returnPlay){
+    G.crossT=(G.crossT||0)+dt;
+    if(G.crossT>2.5&&!G.cavalry){ G.cavalry=true; bigText('HERE COMES THE CAVALRY!',{y:H*0.3,size:22,color:'#ff9f50',dur:1.0}); }
+  }
+  // speed trail while the adrenaline is real
+  if(c.moving&&(G.catchBurst>0||G.rampage>0||Math.hypot(c.vx,c.vy)>124)){
+    G.ghostT=(G.ghostT||0)-dt;
+    if(G.ghostT<=0){ G.ghostT=0.06; spawnGhost(c); }
+  }
   if(G.handoffPending){ // the mesh: RB runs to the QB, ball changes hands on contact
     const r2=G.rbRef;
     const d=dist(r2.x,r2.y,c.x,c.y);
@@ -1010,12 +1164,15 @@ function updateLive(dt){
     }
   }
   // DIVE button appears exactly when a dive is legal
-  const canDive=c.hasBall&&!G.dive&&!G.handoffPending&&c.state!=='prone'&&c.y<yd2y(G.losYd)-2;
+  const canDive=c.hasBall&&!G.dive&&!G.handoffPending&&!G.passWindow&&c.state!=='prone'&&c.y<yd2y(G.losYd)-2;
   const hasDiveBtn=buttons.some(b=>b.id==='dive');
   if(canDive&&!hasDiveBtn) buttons.push({id:'dive',x:58,y:H-92,r:34,label:'DIVE',kind:'round'});
   if(!canDive&&hasDiveBtn) buttons=buttons.filter(b=>b.id!=='dive');
   let cspd=(c.state==='prone'||c.state==='diving'||G.handoffPending)?0:c.spd+18; // no steering while flattened, diving, or mid-mesh
   if(G.catchBurst>0) cspd*=1.22;         // fresh-catch adrenaline
+  if(G.kickFlight) cspd*=0.4;            // positioning under a kick, not sprinting for free yards
+  if(c.role==='QB'&&c.hasBall&&!G.handoffPending) cspd*=0.92; // he's a QB, not a track star
+  if(G.stumbleT>0) cspd*=0.55;           // whiffed truck: legs say no
   c.vx=mv.x*cspd; c.vy=mv.y*cspd;
   c.x+=c.vx*dt; c.y+=c.vy*dt;
   c.moving=(Math.abs(c.vx)+Math.abs(c.vy))>10;
@@ -1023,7 +1180,10 @@ function updateLive(dt){
   // sidelines
   if(c.x<FX0+6||c.x>FX1-6){
     c.x=clamp(c.x,FX0+6,FX1-6);
-    if(c.hasBall){ endPlay('RAN OUT OF BOUNDS'); return; } // no ball in hand (pass in flight / kick dropping)? just clamp
+    if(c.hasBall){
+      if(c.y<=0){ endPlay('',{td:true,silent:true}); return; } // pylon dive: the TD beats the sideline
+      endPlay('RAN OUT OF BOUNDS'); return;
+    } // no ball in hand (pass in flight / kick dropping)? just clamp
   }
   // past line of scrimmage kills the pass
   if(G.passWindow&&c.y<yd2y(G.losYd)-4){
@@ -1072,7 +1232,8 @@ function updateLive(dt){
     if(p.team!==TEAM_CPU) continue;
     p.stateT-=dt;
     if(p.state==='flying'){
-      p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=0.9; p.vy*=0.9; p.spinRot+=14*dt;
+      p.x+=p.vx*dt; p.y+=p.vy*dt;
+      const fdec=Math.pow(0.9,dt*60); p.vx*=fdec; p.vy*=fdec; p.spinRot+=14*dt;
       p.x=clamp(p.x,FX0+4,FX1-4);
       if(p.stateT<=0){ p.state='prone'; p.stateT=1.3; }
       continue;
@@ -1098,7 +1259,9 @@ function updateLive(dt){
       tx=p.x; ty=p.y; // hold zone briefly
     } else {
       // pursue carrier (with prediction)
-      tx=c.x+c.vx*0.28; ty=c.y+c.vy*0.28;
+      if(G.ball){ tx=G.ball.tx; ty=G.ball.ty; } // ball in the air: break on the landing spot, not the prone QB
+      else { tx=c.x+c.vx*0.28; ty=c.y+c.vy*0.28; }
+      if(G.cavalry) speed*=1.15; // the cavalry has arrived
     }
     if(G.ball&&p.cover&&G.ball.target===p.cover){ tx=G.ball.tx; ty=G.ball.ty; speed=p.spd*1.15; }
     const dx=tx-p.x, dy=ty-p.y, m=Math.hypot(dx,dy);
@@ -1110,7 +1273,7 @@ function updateLive(dt){
     }
     // dive at carrier
     const dToC=dist(p.x,p.y,c.x,c.y);
-    if(p.state!=='dive'&&dToC<46&&dToC>14&&c.state!=='prone'&&G.catchGrace<=0&&!G.kickFlight&&Math.random()<0.10){
+    if(p.state!=='dive'&&dToC<46&&dToC>14&&c.state!=='prone'&&G.catchGrace<=0&&!G.kickFlight&&Math.random()<6*dt){
       const ddx=(c.x+c.vx*0.18)-p.x, ddy=(c.y+c.vy*0.18)-p.y, dm=Math.max(1,Math.hypot(ddx,ddy));
       p.state='dive'; p.stateT=0.32; p.vx=ddx/dm*230; p.vy=ddy/dm*230;
       sfx.thud();
@@ -1133,29 +1296,46 @@ function updateLive(dt){
       for(const p of G.players){ if(p.team===TEAM_CPU&&p.state!=='prone'&&p.state!=='flying')
         nearestD=Math.min(nearestD,dist(p.x,p.y,r.x,r.y)); }
       const dr=dist(b.tx,b.ty,r.x,r.y);
+      const throwDist=dist(b.fx,b.fy,b.tx,b.ty);
       G.ball=null;
+      const incomplete=()=>endPlay(pick(['INCOMPLETE','NOBODY HOME','THROWN TO A GHOST','THE BALL HAS FILED A COMPLAINT']),
+        {noAdvance:true,spotY:yd2y(G.losYd)});
       if(dr<26){
-        if(nearestD>32||Math.random()<0.55){
-          // CATCH
-          r.hasBall=true; G.carrier=r; r.routePts=null; r.routeVx=0; r.routeVy=0;
-          sfx.catchFx(); bigText('CAUGHT!',{size:24,color:'#9fd8ff',dur:0.6});
-          G.catchGrace=0.5; G.catchBurst=0.7; // window to make a move before they can wrap you up
-          G.runDir=null; // new ball carrier awaits your swipe
-          G.receivers.forEach(w=>w.marker=null);
-        } else if(nearestD<18&&Math.random()<0.22){
-          sfx.pick(); bigText('PICKED OFF!',{size:36,color:'#ff5050'});
+        // testing a blanket corner deep is how you get baited
+        const blanket=G.players.find(p=>p.team===TEAM_CPU&&p.cover===r&&(p.covSpd||1)>1.1
+          &&p.state!=='prone'&&p.state!=='flying'&&dist(p.x,p.y,r.x,r.y)<26);
+        if(blanket&&throwDist>yd2y(19)&&Math.random()<0.40){ // bait rule is for testing him DEEP
+          sfx.pick(); bigText('HE BAITED YOU, SON!',{size:32,color:'#ff5050'});
           endPlay('',{turnover:'INTERCEPTED!',silent:true});
         } else {
-          endPlay('INCOMPLETE',{noAdvance:true,spotY:yd2y(G.losYd)});
+          // completion odds scale with real separation — open men catch, glued men don't
+          let pCatch=clamp((nearestD-6)/30,0.18,0.95);
+          if(r.role==='RB') pCatch=Math.min(0.95,pCatch+0.25); // the checkdown is the safe one, that's its whole job
+          if(Math.random()<pCatch){
+            // CATCH
+            r.hasBall=true; G.carrier=r; r.routePts=null; r.routeVx=0; r.routeVy=0;
+            sfx.catchFx(); bigText('CAUGHT!',{size:24,color:'#9fd8ff',dur:0.6});
+            hitstop=Math.max(hitstop,0.06); spawnStars(r.x,r.y,4); // the catch deserves a beat
+            G.catchGrace=r.role==='RB'?0.65:0.5; G.catchBurst=0.7;
+            G.runDir=null; // new ball carrier awaits your swipe
+            G.receivers.forEach(w=>w.marker=null);
+            // shove the swarm off the catch point so the grace window is honest
+            for(const p of G.players){
+              if(p.team!==TEAM_CPU) continue;
+              const d=dist(p.x,p.y,r.x,r.y);
+              if(d<20){ const m2=Math.max(1,d); p.x=r.x+(p.x-r.x)/m2*28; p.y=r.y+(p.y-r.y)/m2*28; }
+            }
+          } else if(nearestD<18&&Math.random()<0.20){
+            sfx.pick(); bigText('PICKED OFF!',{size:36,color:'#ff5050'});
+            endPlay('',{turnover:'INTERCEPTED!',silent:true});
+          } else incomplete();
         }
-      } else {
-        endPlay('INCOMPLETE',{noAdvance:true,spotY:yd2y(G.losYd)});
-      }
+      } else incomplete();
     }
   }
   // camera
-  G.camTarget=c.y-H*0.52;
-  G.camY=lerp(G.camY,clamp(G.camTarget,-EZ,yd2y(110)-H+40),0.12);
+  G.camTarget=c.y-H*0.52+Math.min(0,c.vy*0.35); // look ahead when sprinting upfield
+  G.camY=lerp(G.camY,clamp(G.camTarget,-EZ,yd2y(110)-H+40),1-Math.pow(0.88,dt*60));
 }
 function tackle(defender){
   const c=G.carrier;
@@ -1288,7 +1468,10 @@ function drawField(camY){
   if(['live','playcall','snap','dead'].includes(G.state)){
     const ly=yd2y(G.losYd)-camY;
     ctx.fillStyle='rgba(70,140,255,0.8)'; ctx.fillRect(FX0,ly-1,FX1-FX0,2);
-    const fy=yd2y(G.firstYd)-camY;
+    // chains slide to the new spot instead of teleporting
+    if(G.fdDraw===undefined||Math.abs(G.fdDraw-G.firstYd)>30) G.fdDraw=G.firstYd;
+    G.fdDraw=lerp(G.fdDraw,G.firstYd,0.16);
+    const fy=yd2y(G.fdDraw)-camY;
     ctx.fillStyle='rgba(255,242,0,0.85)'; ctx.fillRect(FX0,fy-1,FX1-FX0,2);
   }
 }
@@ -1318,11 +1501,31 @@ function drawBallFlight(camY){
 
 /* ---------------- drawing: HUD ---------------- */
 function drawHUD(){
+  // score change detection: pop the number, announce lead changes
+  if(G._ly===undefined){ G._ly=G.score.you; G._lc=G.score.cpu; }
+  if(G.score.you!==G._ly||G.score.cpu!==G._lc){
+    const was=Math.sign(G._ly-G._lc), now2=Math.sign(G.score.you-G.score.cpu);
+    if(now2!==was&&now2!==0&&(G._ly||G._lc)){ // not the game's first score
+      bigText(now2>0?'SKULLCRUSHERS TAKE THE LEAD!':'BRUISERS TAKE THE LEAD...',
+        {y:H*0.6,size:22,color:now2>0?'#7dff6a':'#b06aff',dur:1.5});
+      if(now2>0) sfx.cheer();
+    }
+    G.scorePop=0.5; G._ly=G.score.you; G._lc=G.score.cpu;
+  }
+  G.scorePop=Math.max(0,(G.scorePop||0)-0.016);
+  const ss=20+(G.scorePop>0?Math.sin(G.scorePop*12)*5:0);
   ctx.fillStyle='rgba(8,8,14,0.92)'; ctx.fillRect(0,0,W,54);
   ctx.fillStyle='#00b8a6'; ctx.fillRect(8,8,14,14);
-  pixelText('SKL '+G.score.you,30,16,20,'#fff',null,false);
+  pixelText('SKL '+G.score.you,30,16,ss,'#fff',null,false);
   ctx.fillStyle='#7a2fbf'; ctx.fillRect(130,8,14,14);
-  pixelText('BRU '+G.score.cpu,152,16,20,'#fff',null,false);
+  pixelText('BRU '+G.score.cpu,152,16,ss,'#fff',null,false);
+  // berserk vignette
+  if(G.rampage>0){
+    const a=0.10+0.06*Math.sin(G.titleT*10+G.t*10);
+    ctx.fillStyle='rgba(255,0,0,'+a.toFixed(3)+')';
+    ctx.fillRect(0,54,8,H-54); ctx.fillRect(W-8,54,8,H-54);
+    ctx.fillRect(0,54,W,6); ctx.fillRect(0,H-6,W,6);
+  }
   const cs=Math.max(0,Math.ceil(G.clock));
   const clockStr=(G.ot?'OT':'Q'+Math.min(G.quarter,4))+' '+Math.floor(cs/60)+':'+(cs%60<10?'0':'')+cs%60;
   pixelText(clockStr,W-58,16,20,G.clock<30?'#ff5050':'#fff200',null,true);
@@ -1334,7 +1537,7 @@ function drawHUD(){
 function drawButtons(){
   for(const b of buttons){
     if(b.rect){
-      ctx.fillStyle=b.hot?'#2f2f4a':'rgba(20,20,36,0.95)';
+      ctx.fillStyle=btnHeld[b.id]!==undefined?'#3a3a5e':'rgba(20,20,36,0.95)';
       ctx.fillRect(b.x,b.y,b.w,b.h);
       ctx.strokeStyle='#fff200';ctx.lineWidth=3;ctx.strokeRect(b.x,b.y,b.w,b.h);
       pixelText(b.label,b.x+b.w/2,b.y+b.h/2-(b.sub?10:0),24,'#fff',null,true);
@@ -1343,13 +1546,15 @@ function drawButtons(){
       const cool=b.id==='truck'&&G.truckCd>0;
       ctx.fillStyle=cool?'rgba(60,60,70,0.85)':'rgba(200,30,30,0.85)';
       if(b.id!=='truck')ctx.fillStyle='rgba(30,90,200,0.85)';
+      if(b.id==='truck'&&G.rampage>0&&!cool)ctx.fillStyle='rgba(255,60,30,0.95)'; // berserk button burns
       ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,7);ctx.fill();
+      if(btnHeld[b.id]!==undefined){ ctx.fillStyle='rgba(255,255,255,0.35)'; ctx.fill(); } // pressed feedback
       ctx.strokeStyle='#fff';ctx.lineWidth=3;ctx.stroke();
       pixelText(b.label,b.x,b.y,b.label.length>1?18:26,'#fff',null,true);
       if(cool){
         ctx.fillStyle='rgba(0,0,0,0.5)';
         ctx.beginPath();ctx.moveTo(b.x,b.y);
-        ctx.arc(b.x,b.y,b.r,-Math.PI/2,-Math.PI/2+Math.PI*2*(G.truckCd/1.6));ctx.fill();
+        ctx.arc(b.x,b.y,b.r,-Math.PI/2,-Math.PI/2+Math.PI*2*Math.min(1,G.truckCd/2));ctx.fill();
       }
     }
   }
@@ -1593,6 +1798,8 @@ function drawTitle(dt){
   pixelText('BONE COUNTY BRUISERS',W/2,H*0.67,18,'#b06aff',null,true);
   if(t>IMP&&Math.floor(G.titleT*2)%2===0)
     pixelText('TAP TO START',W/2,H*0.78,28,'#fff','#000',true);
+  const sr=seriesText();
+  if(sr) pixelText(sr,W/2,H*0.845,15,'#fff200',null,true);
   pixelText('© 1994 TWO GUYS WHO COULDN’T CODE',W/2,H*0.88,14,'#777',null,true);
   pixelText('32 YEARS IN DEVELOPMENT • WORTH IT',W/2,H*0.91,14,'#777',null,true);
   drawFxWorld(0); drawFxScreen(); // impact stars / flash live on the title screen
@@ -1628,7 +1835,11 @@ function setupPlaycallButtons(){
     {id:'play_short',label:'QUICK STRIKE',sub:'SHORT ROUTES A+B'},
     {id:'play_bomb',label:'BOMBS AWAY',sub:'DEEP SHOTS A+B'},
   ];
-  if(G.down===4){
+  if(G.convChoice){ // after a touchdown: take the point or take the risk
+    defs.length=0;
+    defs.push({id:'play_xp',label:'KICK THE XP',sub:'+1. AUTOMATIC. SENSIBLE.'});
+    defs.push({id:'play_2pt',label:'GO FOR 2',sub:'ONE SNAP FROM THE 2. VERY HARD.'});
+  } else if(G.down===4){
     defs.push({id:'play_punt',label:'PUNT',sub:'LIVE TO FIGHT AGAIN'});
     if(G.losYd<=33)defs.push({id:'play_fg',label:'FIELD GOAL',sub:Math.round(G.losYd+17)+' YARDS'});
   }
@@ -1643,14 +1854,14 @@ function drawPlaycall(){
   drawField(G.camY);
   drawHUD();
   ctx.fillStyle='rgba(0,0,0,0.45)';ctx.fillRect(0,54,W,H-54);
-  pixelText('CALL THE PLAY',W/2,100,30,'#fff200','#000',true);
+  pixelText(G.convChoice?'TOUCHDOWN! NOW WHAT?':'CALL THE PLAY',W/2,100,30,'#fff200','#000',true);
   drawButtons();
 }
 
 /* ---------------- state machine glue ---------------- */
 function onButtonPlaycall(id){}
 function advanceTap(){
-  if(G.state==='intro'){ setState('title'); return; }
+  if(G.state==='intro'){ if(G.introT>0.5){ stopIntroMusic(); setState('title'); } return; }
   if(G.state==='title'){ sfx.jingle(); setState(G.howSeen?'banner':'howto');
     if(G.howSeen){ resetGame(); startYourDrive(); } return; }
   if(G.state==='howto'){ G.howSeen=true; resetGame(); startYourDrive(); return; }
@@ -1659,6 +1870,8 @@ function advanceTap(){
 function resetGame(){
   G.score={you:0,cpu:0};G.quarter=1;G.ot=false;G.vhhCount=0;G.vhhTaken=0;G.longestPlay=0;
   G.returnPlay=false;G.kickFlight=null;G.lastSimOutcome=null;
+  G.convChoice=false;G.conversion=false;G.kick=null;G.rampage=0;
+  G._ly=0;G._lc=0;G.fdDraw=undefined;G.halftimeDone=false;
 }
 // patch original onButton to handle playcall ids defined later
 const _origOnButton=onButton;
@@ -1666,6 +1879,11 @@ onButton=function(id){
   if(!id) return;
   if(G.state==='playcall'){
     sfx.ui();
+    if(id==='play_xp'){ G.convChoice=false; G.score.you+=1;
+      queueBanner(['EXTRA POINT','GOOD. OBVIOUSLY.','+1'],()=>endOfYourDrive()); return; }
+    if(id==='play_2pt'){ G.convChoice=false; G.conversion=true;
+      G.losYd=2; G.down=1; G.toGo=2; G.firstYd=0;
+      buttons=[]; return; } // playcall repopulates with run/pass from the 2
     if(id==='play_punt'){ doPunt(); return; }
     if(id==='play_fg'){ tryFG(); return; }
     if(id.startsWith('play_')){ startSnap(id.slice(5)); return; }
@@ -1688,6 +1906,10 @@ function frame(now){
 
   ctx.save();
   if(shake>0) ctx.translate(rnd(-shake,shake)*0.5,rnd(-shake,shake)*0.5);
+  if(zoomPunch>0){ // punch-zoom: the camera flinches with the hit
+    const z=1+zoomPunch;
+    ctx.translate(W/2,H/2); ctx.scale(z,z); ctx.translate(-W/2,-H/2);
+  }
 
   switch(G.state){
     case 'boot':
@@ -1715,7 +1937,7 @@ function frame(now){
       break;
     case 'playcall':
       if(buttons.length===0) setupPlaycallButtons();
-      G.camY=lerp(G.camY,yd2y(G.losYd)-H*0.55,0.1);
+      G.camY=lerp(G.camY,yd2y(G.losYd)-H*0.55,1-Math.pow(0.9,dt*60));
       drawPlaycall();
       break;
     case 'snap':
@@ -1762,12 +1984,50 @@ function frame(now){
       if(s.t>0.8)pixelText(s.lines[0],W/2,H*0.40,18,'#ccc',null,true);
       if(s.t>1.7)pixelText(s.lines[1],W/2,H*0.46,18,'#ccc',null,true);
       if(s.t>1.0&&!s.c1){s.c1=true;sfx.thud();}
+      // Q4/OT: the one-tap defensive stand — nail the sweeping marker to blow up the play
+      if(s.qte&&!s.qte.done&&s.t>0.8&&s.t<2.6){
+        s.qte.pos+=s.qte.dir*dt*1.2;
+        if(s.qte.pos>1){s.qte.pos=1;s.qte.dir=-1;} if(s.qte.pos<0){s.qte.pos=0;s.qte.dir=1;}
+        const bx=W*0.15,bw=W*0.7,by=H*0.70;
+        pixelText('TAP TO BLOW IT UP!',W/2,by-26,18,'#7dff6a','#000',true);
+        ctx.fillStyle='rgba(255,255,255,0.2)';ctx.fillRect(bx,by,bw,16);
+        ctx.fillStyle='rgba(125,255,106,0.5)';ctx.fillRect(bx+bw*0.39,by,bw*0.22,16);
+        ctx.fillStyle='#fff';ctx.fillRect(bx+bw*s.qte.pos-2,by-4,4,24);
+        if(tapped){
+          s.qte.done=true;
+          if(Math.abs(s.qte.pos-0.5)<0.11){
+            s.qte.hit=true; s.outcome='stuffed'; s.pts=0;
+            s.resultLines=[pick(SIM_DEF),'YOU BLEW IT UP YOURSELF!'];
+            sfx.megacrunch(); shake=14; zoomPunch=0.08;
+          } else {
+            s.resultLines[1]=(s.resultLines[1]||'')+' (YOU MISSED THE TACKLE)';
+            sfx.thud();
+          }
+        }
+      }
       if(s.t>1.9&&!s.c2){s.c2=true;if(s.outcome==='stuffed'){sfx.megacrunch();shake=10;}else sfx.thud();}
       if(s.t>2.7){
         s.resultLines.forEach((ln,i)=>pixelText(ln,W/2,H*0.54+i*30,22,i===0?'#fff200':'#fff','#000',true));
         if(!s.scored){s.scored=true;G.score.cpu+=s.pts;if(s.pts>0)sfx.fail();else sfx.firstDown();}
       }
       if(s.t>4.2){ G.lastSimOutcome=s.outcome; G.sim=null; endQuarter(); }
+      break; }
+    case 'kickmeter': {
+      const k=G.kick;
+      k.t+=dt;
+      k.pos+=k.dir*dt*1.4;
+      if(k.pos>1){k.pos=1;k.dir=-1;} if(k.pos<0){k.pos=0;k.dir=1;}
+      drawField(G.camY); drawHUD(); drawFxScreen();
+      ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,H*0.3,W,H*0.34);
+      pixelText(k.type==='fg'?k.distYds+' YD FIELD GOAL':'PUNT',W/2,H*0.36,28,'#fff200','#000',true);
+      pixelText('TAP TO KICK!',W/2,H*0.42,20,'#fff','#000',true);
+      const bx=W*0.12,bw=W*0.76,by=H*0.50;
+      ctx.fillStyle='rgba(255,255,255,0.2)';ctx.fillRect(bx,by,bw,20);
+      const win=k.type==='fg'?k.window:0.5;
+      ctx.fillStyle='rgba(125,255,106,0.5)';
+      ctx.fillRect(bx+bw*(0.5-win/2),by,bw*win,20);
+      ctx.fillStyle='#fff';ctx.fillRect(bx+bw*k.pos-2,by-5,4,30);
+      if(tapped||k.t>4.2) resolveKick(); // hesitate forever and the snap gets away from you
       break; }
     case 'gameover': {
       ctx.fillStyle='#0b0b1c';ctx.fillRect(0,0,W,H);
@@ -1779,8 +2039,12 @@ function frame(now){
         }
       }
       pixelText(win?'SKULLCRUSHERS':'BRUISERS',W/2,H*0.18,40,win?'#00e5cf':'#b06aff','#000',true);
-      pixelText('WIN!',W/2,H*0.24,48,'#fff200','#000',true);
+      pixelText(win?'WIN!':(G.score.you===G.score.cpu?'WIN IN OT!':'WIN!'),W/2,H*0.24,48,'#fff200','#000',true);
       pixelText('FINAL: SKL '+G.score.you+' — BRU '+G.score.cpu,W/2,H*0.34,24,'#fff',null,true);
+      if(!win&&G.score.you===G.score.cpu)
+        pixelText('OT RULE: SCORE OR LOSE. YOU KNOW WHAT YOU DID.',W/2,H*0.385,14,'#999',null,true);
+      const sr=seriesText();
+      if(sr) pixelText(sr,W/2,H*0.59,17,'#fff200',null,true);
       pixelText('VERY HARD HITS DELIVERED: '+G.vhhCount,W/2,H*0.44,20,'#7dff6a',null,true);
       pixelText('VERY HARD HITS RECEIVED: '+G.vhhTaken,W/2,H*0.49,20,'#ff8080',null,true);
       pixelText('LONGEST PLAY: '+G.longestPlay+' YDS',W/2,H*0.54,20,'#9fd8ff',null,true);
