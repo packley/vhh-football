@@ -449,7 +449,7 @@ function spawnDust(x,y){
 }
 const HIT_SHOUTS=['VERY HARD HIT!','BONE-RATTLER!!','CRUNCH-O-RAMA!','HE FELT THAT ONE!',
   'OH THE HUMANITY!','ABSOLUTELY LEVELED!','PANCAKED!!','SEE YOU IN 1995!','THAT’S A LAWSUIT!','DE-CLEATED!!',
-  'RIGHT IN THE ASSHOLE!'];
+  'RIGHT IN THE ASSHOLE!','SUCK A DICK, SON!'];
 function carnage(x,y,team,mega){
   hitstop=mega?0.30:0.20; shake=mega?18:12; flashWhite=mega?0.18:0.10;
   if(mega) sfx.megacrunch(); else sfx.crunch();
@@ -661,14 +661,18 @@ function setupPlay(type){
   }
   // routes
   if(type==='short'){
-    wrA.route={x:190,y:yd2y(L-8)}; wrB.route={x:400,y:yd2y(L-7)};
+    wrA.routePts=[{x:190,y:yd2y(L-8)}]; wrB.routePts=[{x:400,y:yd2y(L-7)}];
   } else if(type==='bomb'){
-    wrA.route={x:120,y:yd2y(L-26)}; wrB.route={x:370,y:yd2y(L-28)};
+    wrA.routePts=[{x:120,y:yd2y(L-26)}]; wrB.routePts=[{x:370,y:yd2y(L-28)}];
   }
   if(type!=='run'){
     wrA.marker='A'; wrB.marker='B'; G.passWindow=true;
-    // RB swings out of the backfield as the checkdown
-    rb.route={x:Math.random()<0.5?120:360,y:yd2y(L+1)};
+    // RB runs a real route out of the backfield: wheel (swing then turn upfield)
+    // or an angle route (out, then cut back over the middle)
+    const side=Math.random()<0.5;
+    rb.routePts=Math.random()<0.6
+      ?[{x:side?365:115,y:yd2y(L+0.5)},{x:side?385:95,y:yd2y(L-14)}]  // wheel
+      :[{x:side?330:150,y:yd2y(L-1)},{x:240,y:yd2y(L-11)}];           // angle
     rb.marker='C'; G.receivers.push(rb);
   }
   // carrier
@@ -1033,13 +1037,17 @@ function updateLive(dt){
   // own endzone clamp
   c.y=Math.min(c.y,yd2y(109));
 
-  // receivers run routes
+  // receivers run routes (multi-waypoint)
   for(const w of G.receivers){
     if(w===c) continue;
-    if(w.route){
-      const dx=w.route.x-w.x, dy=w.route.y-w.y, m=Math.hypot(dx,dy);
-      if(m>4){ w.routeVx=dx/m*w.spd; w.routeVy=dy/m*w.spd; }
-      else { w.routeVx=0; w.routeVy=-44; } // drift upfield after route
+    if(w.routePts){
+      w.routeI=w.routeI||0;
+      const tp=w.routePts[w.routeI];
+      if(tp){
+        const dx=tp.x-w.x, dy=tp.y-w.y, m=Math.hypot(dx,dy);
+        if(m>6){ w.routeVx=dx/m*w.spd; w.routeVy=dy/m*w.spd; }
+        else w.routeI++; // hit the break point, on to the next leg
+      } else { w.routeVx=0; w.routeVy=-48; } // route done: keep working upfield
       w.x+=w.routeVx*dt; w.y+=w.routeVy*dt; w.moving=true; w.animT+=dt*1.3;
     }
   }
@@ -1129,7 +1137,7 @@ function updateLive(dt){
       if(dr<26){
         if(nearestD>32||Math.random()<0.55){
           // CATCH
-          r.hasBall=true; G.carrier=r; r.route=null; r.routeVx=0; r.routeVy=0;
+          r.hasBall=true; G.carrier=r; r.routePts=null; r.routeVx=0; r.routeVy=0;
           sfx.catchFx(); bigText('CAUGHT!',{size:24,color:'#9fd8ff',dur:0.6});
           G.catchGrace=0.5; G.catchBurst=0.7; // window to make a move before they can wrap you up
           G.runDir=null; // new ball carrier awaits your swipe
