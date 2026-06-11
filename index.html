@@ -1209,6 +1209,13 @@ function updateLive(dt){
   // receivers run routes (multi-waypoint)
   for(const w of G.receivers){
     if(w===c) continue;
+    if(G.ball&&G.ball.target===w){ // ball's up: forget the route, go get it
+      const dx=G.ball.tx-w.x, dy=G.ball.ty-w.y, m=Math.hypot(dx,dy);
+      if(m>4){ w.routeVx=dx/m*w.spd; w.routeVy=dy/m*w.spd; }
+      else { w.routeVx=0; w.routeVy=0; }
+      w.x+=w.routeVx*dt; w.y+=w.routeVy*dt; w.moving=m>4; w.animT+=dt*1.3;
+      continue;
+    }
     if(w.routePts){
       w.routeI=w.routeI||0;
       const tp=w.routePts[w.routeI];
