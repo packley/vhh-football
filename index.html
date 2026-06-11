@@ -211,12 +211,22 @@ function decodeClips(){
     }catch(e){ clipBufs[k]=false; }
   }
 }
+const clipSrcs={};
 function playClip(k,vol){
   if(!AU.on||!clipBufs[k]) return false;
   const s=AU.ctx.createBufferSource(); s.buffer=clipBufs[k];
   const g=AU.ctx.createGain(); g.gain.value=vol||0.9;
   s.connect(g); g.connect(AU.master); s.start();
+  clipSrcs[k]={src:s,gain:g};
   return true;
+}
+function stopClip(k){ // quick fade so the cutoff doesn't click
+  const c=clipSrcs[k]; if(!c||!AU.on) return;
+  try{
+    c.gain.gain.setTargetAtTime(0.0001,AU.ctx.currentTime,0.03);
+    c.src.stop(AU.ctx.currentTime+0.15);
+  }catch(e){}
+  delete clipSrcs[k];
 }
 const uttKeep=[]; // Safari GCs un-referenced utterances before they play — keep them alive
 let ttsProven=false, ttsDebug='no speak yet';
@@ -328,7 +338,7 @@ function realStartIntroMusic(el){ // el = seconds of intro already elapsed (late
   oscAt(70,'sawtooth',0.09,4.6,7.6,{slideTo:950,swell:2.4,lp:1500});
   oscAt(70.6,'sawtooth',0.06,4.6,7.6,{slideTo:956,swell:2.4,lp:1500});
   // heartbeat thumps while the doomed man jogs (impact lands at ~11.0)
-  [9.0,9.6,10.15,10.6,10.95].forEach((s,i)=>thump(s,0.3+i*0.06));
+  [10.2,10.8,11.35,11.8,12.15].forEach((s,i)=>thump(s,0.3+i*0.06)); // impact now lands at ~12.2
 }
 function stopIntroMusic(){
   G.introMusicWanted=false;
@@ -1744,7 +1754,7 @@ function drawIntro(dt){
     // crowd
     for(let y=0;y<70;y+=8)for(let x=0;x<W;x+=8) if((x*7+y*13)%5<2){ctx.fillStyle=['#444','#665','#556'][(x+y)%3];ctx.fillRect(x,gy-118+y,5,5);}
     const ts=t-8.8;
-    const impactT=2.2, FREEZE=0.2;
+    const impactT=3.4, FREEZE=0.2; // a longer, happier jog — more song before the consequences
     const ix=70+100*impactT;        // runner position at the moment of impact
     const cx=ix+30;                 // tackler contact position
     if(ts<impactT){
@@ -1758,7 +1768,7 @@ function drawIntro(dt){
         if(G.introTuneT<=0){
           G.introTuneT=0.9; G.introTuneN=(G.introTuneN||0)+1;
           if(G.introTuneN%2===1){ voiceDoodly(); }
-          else {
+          else if(!(AU.on&&AU.ctx.currentTime<doodlyBlockUntil)){ // don't whistle over the man's singing
             const seq=[784,988,880,1047];
             tone(seq[G.introTuneN%4],0.14,'sine',0.09);
             tone(seq[(G.introTuneN+1)%4],0.12,'sine',0.07,null,0.18);
@@ -1778,7 +1788,7 @@ function drawIntro(dt){
       }
     } else if(ts<impactT+FREEZE){
       // FREEZE FRAME: the moment of contact
-      if(!G.introHitDone){G.introHitDone=true;sfx.megacrunch();sfx.boom();shake=22;}
+      if(!G.introHitDone){G.introHitDone=true;stopClip('doodly');sfx.megacrunch();sfx.boom();shake=22;} // the song dies with him
       drawBigGuy(ix,gy,TEAM_YOU,'brace',false,true);
       drawBigGuy(cx,gy-6,TEAM_CPU,'missile',false,true);
       // impact starburst between them
