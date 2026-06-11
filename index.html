@@ -1424,6 +1424,7 @@ function updateLive(dt){
           // completion odds scale with real separation — open men catch, glued men don't
           let pCatch=clamp((nearestD-6)/30,0.18,0.95);
           if(r.role==='RB') pCatch=Math.min(0.95,pCatch+0.25); // the checkdown is the safe one, that's its whole job
+          else if(r.sitAfter) pCatch=Math.min(0.95,pCatch+0.22); // comeback routes: body between ball and defender
           if(Math.random()<pCatch){
             // CATCH
             r.hasBall=true; G.carrier=r; r.routePts=null; r.routeVx=0; r.routeVy=0;
