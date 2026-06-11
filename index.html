@@ -719,6 +719,9 @@ function setupPlay(type){
     wrA.routePts=[{x:190,y:yd2y(L-8)}]; wrB.routePts=[{x:400,y:yd2y(L-7)}];
   } else if(type==='bomb'){
     wrA.routePts=[{x:120,y:yd2y(L-26)}]; wrB.routePts=[{x:370,y:yd2y(L-28)}];
+  } else if(type==='hook'){ // sprint, plant, come back to the ball and SIT
+    wrA.routePts=[{x:110,y:yd2y(L-13)},{x:132,y:yd2y(L-9.5)}]; wrA.sitAfter=true;
+    wrB.routePts=[{x:380,y:yd2y(L-13)},{x:358,y:yd2y(L-9.5)}]; wrB.sitAfter=true;
   }
   if(type!=='run'){
     wrA.marker='A'; wrB.marker='B'; G.passWindow=true;
@@ -1316,7 +1319,7 @@ function updateLive(dt){
         const dx=tp.x-w.x, dy=tp.y-w.y, m=Math.hypot(dx,dy);
         if(m>6){ w.routeVx=dx/m*w.spd; w.routeVy=dy/m*w.spd; }
         else w.routeI++; // hit the break point, on to the next leg
-      } else { w.routeVx=0; w.routeVy=-48; } // route done: keep working upfield
+      } else { w.routeVx=0; w.routeVy=w.sitAfter?0:-48; } // route done: drift upfield, or sit on the hook
       w.x+=w.routeVx*dt; w.y+=w.routeVy*dt; w.moving=true; w.animT+=dt*1.3;
     }
   }
@@ -1945,6 +1948,7 @@ function setupPlaycallButtons(){
   const defs=[
     {id:'play_run',label:'SMASH RUN',sub:'HAND IT TO THE BACK'},
     {id:'play_short',label:'QUICK STRIKE',sub:'SHORT ROUTES A+B'},
+    {id:'play_hook',label:'BUTTON HOOKS',sub:'THEY TURN AND COME BACK'},
     {id:'play_bomb',label:'BOMBS AWAY',sub:'DEEP SHOTS A+B'},
   ];
   if(G.kickChoice){ // kicking it back while trailing late: how brave are you?
