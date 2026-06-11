@@ -67,6 +67,43 @@ const TEAMS=[
 let TEAM_CPU=TEAMS[0]; // the classic grudge, until the tournament says otherwise
 function setOpponent(t){ TEAM_CPU=t; fieldCv=null; } // repaint their endzone
 
+/* ---------------- the roster, est. 1994 ---------------- */
+const ROSTER={
+  QB: {name:'DIRK THUNDER', num:7,  spd:104},
+  RB: {name:'REX HAMBONE',  num:32, spd:115},
+  WRA:{name:'BUTCH MAGNUM', num:88, spd:112},
+  WRB:{name:'TINY TOLLIVER',num:81, spd:108},
+  RET:{name:'FLASH GIBSON', num:21, spd:114},
+  K:  {name:'IGOR THE FOOT',num:3,  spd:90},
+};
+// per-game stat sheet: G.gstats[name][key]
+function stat(who,key,amt){
+  if(!who) return;
+  const s=G.gstats[who.name]||(G.gstats[who.name]={});
+  s[key]=(s[key]||0)+amt;
+}
+function mile(who,key,thresh,label){ // milestone callouts, once per game
+  if(!who) return;
+  const s=G.gstats[who.name];
+  if(s&&(s[key]||0)>=thresh&&!s['_m'+key]){
+    s['_m'+key]=1;
+    bigText(thresh+' '+label+' FOR '+who.name+'!',{y:H*0.6,size:17,color:'#7dff6a',dur:1.8});
+    sfx.firstDown();
+  }
+}
+function loadCareers(){ try{ return JSON.parse(localStorage.getItem('vhh_careers')||'{}'); }catch(e){ return {}; } }
+function saveCareers(){
+  try{
+    const c=loadCareers();
+    for(const name in G.gstats){
+      const t=c[name]||(c[name]={});
+      for(const k in G.gstats[name]) if(k[0]!=='_') t[k]=(t[k]||0)+G.gstats[name][k];
+      t.games=(t.games||0)+1;
+    }
+    localStorage.setItem('vhh_careers',JSON.stringify(c));
+  }catch(e){}
+}
+
 /* ---------------- audio (all synthesized) ---------------- */
 const AU={ctx:null,master:null,on:false};
 function audioInit(){
@@ -703,7 +740,10 @@ function setupPlay(type){
   const qb=newPlayer(TEAM_YOU,240,L+5,'QB');
   const rb=newPlayer(TEAM_YOU,212,L+5.5,'RB'); // tight to the QB: quick mesh
   const wrA=newPlayer(TEAM_YOU,70,L+0.6,'WR'); const wrB=newPlayer(TEAM_YOU,410,L+0.6,'WR');
-  qb.spd=104; rb.spd=rnd(112,118); wrA.spd=rnd(104,116); wrB.spd=rnd(104,116);
+  qb.who=ROSTER.QB; rb.who=ROSTER.RB; wrA.who=ROSTER.WRA; wrB.who=ROSTER.WRB;
+  qb.spd=ROSTER.QB.spd; rb.spd=ROSTER.RB.spd+rnd(-3,3);
+  wrA.spd=ROSTER.WRA.spd+rnd(-4,4); wrB.spd=ROSTER.WRB.spd+rnd(-4,4);
+  G.playCtx={passer:null,catcher:null};
   P.push(ol1,ol2,ol3,qb,rb,wrA,wrB);
   G.qb=qb; G.receivers=[wrA,wrB];
   // defense
@@ -840,6 +880,7 @@ function doTruck(){
     best.helmetOn=false;
     const shout=carnage(best.x,best.y,TEAM_CPU,true);
     G.vhhCount+=counter?2:1;
+    stat(c.who,'vhh',counter?2:1);
     bigText(counter?'+2 COUNTER-TRUCK!!':'+1 VERY HARD HIT',{y:H*0.46,size:counter?24:20,color:'#7dff6a',dur:0.9});
     // announcer growls it about a third of the time
     if(Math.random()<0.33&&!G.shoutCd){ G.shoutCd=4; speak(shout.toLowerCase().replace(/[!.’']/g,''),{pitch:0.7,rate:0.95,dur:1.0}); }
@@ -879,6 +920,7 @@ function doThrow(i){
   // lead the receiver
   const tx=clamp(r.x+(r.routeVx||0)*dur,FX0+8,FX1-8), ty=r.y+(r.routeVy||0)*dur;
   G.ball={fx:qb.x,fy:qb.y,tx,ty,t:0,dur,target:r};
+  G.playCtx.passer=qb.who; stat(qb.who,'att',1);
   qb.hasBall=false; G.passWindow=false;
   G.receivers.forEach(w=>w.marker=null);
   buttons=buttons.filter(b=>b.id==='truck');
@@ -908,7 +950,8 @@ function setupReturn(kind){
   const startYd=kind==='kick'?rnd(88,96):rnd(58,68);
   G.losYd=startYd; G.down=1; G.toGo=10; G.firstYd=startYd-10;
   const ret=newPlayer(TEAM_YOU,rnd(180,300),startYd,'RET');
-  ret.spd=112; G.carrier=ret; G.qb=null; G.receivers=[];
+  ret.spd=ROSTER.RET.spd; ret.who=ROSTER.RET; G.carrier=ret; G.qb=null; G.receivers=[];
+  G.playCtx={passer:null,catcher:null};
   G.players.push(ret);
   // coverage team thundering downfield
   const cov=[];
@@ -937,6 +980,20 @@ function setupReturn(kind){
 }
 
 function recordGain(yds){ if(yds>G.longestPlay) G.longestPlay=Math.round(yds); }
+// credit the yards to the men who earned them
+function attribute(gain,isTd){
+  const cx=G.playCtx||{};
+  gain=Math.round(gain);
+  if(cx.catcher){ // a completed pass: passer and catcher both get the full play
+    stat(cx.passer,'passYds',gain); stat(cx.catcher,'recYds',gain);
+    if(isTd){ stat(cx.passer,'passTD',1); stat(cx.catcher,'recTD',1); }
+    mile(cx.passer,'passYds',200,'PASSING YARDS'); mile(cx.catcher,'recYds',100,'RECEIVING YARDS');
+  } else if(G.carrier&&G.carrier.who){
+    stat(G.carrier.who,'rushYds',gain);
+    if(isTd) stat(G.carrier.who,'rushTD',1);
+    mile(G.carrier.who,'rushYds',100,'RUSHING YARDS');
+  }
+}
 function tdQuip(){ return pick(['PUT IT ON THE FRIDGE!','1994 WOULD BE PROUD!','SUCK IT, '+TEAM_CPU.city+'!','SEE YOU IN THE END ZONE, NERDS!']); }
 function afterPlay(){
   const o=G.deadOpts||{};
@@ -953,6 +1010,8 @@ function afterPlay(){
   }
   if(o.td){
     recordGain(G.losYd); // scored from the line of scrimmage (or the catch spot, on returns)
+    if(wasReturn){ stat(G.carrier.who,'retYds',Math.round(G.losYd)); stat(G.carrier.who,'retTD',1); }
+    else attribute(G.losYd,true);
     G.score.you+=6; sfx.td();
     if(G.ot){ // sudden death: the six wins it, skip the formality
       queueBanner(['TOUCHDOWN','SKULLCRUSHERS WIN IT!','+6'],()=>endOfYourDrive());
@@ -966,6 +1025,7 @@ function afterPlay(){
   if(wasReturn){
     const s2=clamp(y2yd(o.spotY!==undefined?o.spotY:G.carrier.y),2,97);
     recordGain(G.losYd-s2); // return yardage counts
+    stat(G.carrier&&G.carrier.who,'retYds',Math.round(G.losYd-s2));
     G.losYd=s2; G.down=1; G.toGo=Math.min(10,s2); G.firstYd=Math.max(0,s2-10);
     const own=s2>50;
     queueBanner(['RETURNED TO THE',(own?'OWN ':'BRUISERS ')+Math.round(own?100-s2:s2)+' YARD LINE'],
@@ -980,6 +1040,7 @@ function afterPlay(){
   }
   const gain=G.losYd-spotYd;
   recordGain(gain);
+  if(!o.noAdvance&&!o.sack) attribute(gain,false); // sacks aren't rushing yards, ask any QB
   if(!o.noAdvance){
     G.losYd=spotYd;
     if(spotYd<=G.firstYd){
@@ -1146,6 +1207,7 @@ function finishGame(){
     localStorage.setItem('vhh_series',JSON.stringify(s));
     G.series=s;
   }catch(e){}
+  saveCareers();
   setState('gameover');
   if(G.result==='win'){sfx.td();sfx.crowd();} else sfx.fail();
 }
@@ -1236,9 +1298,11 @@ function finishKick(){
     return;
   }
   if(a.type==='xp'){
+    stat(ROSTER.K,'xpa',1); if(a.good) stat(ROSTER.K,'xpm',1);
     if(a.good){ G.score.you+=1; queueBanner(['EXTRA POINT','GOOD. AS EXPECTED.','+1'],()=>afterScoreFlow()); }
     else queueBanner(['THE EXTRA POINT...','HE MISSED THE AUTOMATIC ONE.','GROUNDS FOR DIVORCE'],()=>afterScoreFlow());
   } else {
+    stat(ROSTER.K,'fga',1); if(a.good) stat(ROSTER.K,'fgm',1);
     if(a.good){ G.score.you+=3; queueBanner([a.distYds+' YD FIELD GOAL','IS GOOD!','+3'],()=>afterScoreFlow()); }
     else queueBanner([a.distYds+' YD FIELD GOAL',
       a.doink?'OFF THE POST. THE POST WINS.':pick(['NO GOOD.','SHANKED INTO THE PARKING LOT!','HE HIT THE MASCOT. THE MASCOT IS DOWN.'])],
@@ -1473,7 +1537,8 @@ function updateLive(dt){
         const blanket=G.players.find(p=>p.team===TEAM_CPU&&p.cover===r&&(p.covSpd||1)>1.1
           &&p.state!=='prone'&&p.state!=='flying'&&dist(p.x,p.y,r.x,r.y)<26);
         if(blanket&&throwDist>yd2y(19)&&Math.random()<0.40){ // bait rule is for testing him DEEP
-          sfx.pick(); bigText('HE BAITED YOU, SON!',{size:32,color:'#ff5050'});
+          sfx.pick(); stat(G.playCtx.passer,'int',1);
+          bigText('HE BAITED YOU, SON!',{size:32,color:'#ff5050'});
           endPlay('',{turnover:'INTERCEPTED!',silent:true});
         } else {
           // completion odds scale with real separation — open men catch, glued men don't
@@ -1483,6 +1548,7 @@ function updateLive(dt){
           if(Math.random()<pCatch){
             // CATCH
             r.hasBall=true; G.carrier=r; r.routePts=null; r.routeVx=0; r.routeVy=0;
+            G.playCtx.catcher=r.who; stat(r.who,'rec',1); stat(G.playCtx.passer,'comp',1);
             sfx.catchFx(); bigText('CAUGHT!',{size:24,color:'#9fd8ff',dur:0.6});
             hitstop=Math.max(hitstop,0.06); spawnStars(r.x,r.y,4); // the catch deserves a beat
             G.catchGrace=r.role==='RB'?0.65:0.5; G.catchBurst=0.7;
@@ -1495,7 +1561,8 @@ function updateLive(dt){
               if(d<20){ const m2=Math.max(1,d); p.x=r.x+(p.x-r.x)/m2*28; p.y=r.y+(p.y-r.y)/m2*28; }
             }
           } else if(nearestD<18&&Math.random()<0.20){
-            sfx.pick(); bigText('PICKED OFF!',{size:36,color:'#ff5050'});
+            sfx.pick(); stat(G.playCtx.passer,'int',1);
+            bigText('PICKED OFF!',{size:36,color:'#ff5050'});
             endPlay('',{turnover:'INTERCEPTED!',silent:true});
           } else incomplete();
         }
@@ -1518,7 +1585,8 @@ function tackle(defender){
     return;
   }
   const sackish=c===G.qb&&c.y>yd2y(G.losYd);
-  endPlay(sackish?'SACKED!':'TACKLED',{spotY:c.y,silent:true,runoff:true}); // tackled inbounds: clock keeps bleeding
+  if(sackish) stat(c.who,'sacked',1);
+  endPlay(sackish?'SACKED!':'TACKLED',{spotY:c.y,silent:true,runoff:true,sack:sackish}); // tackled inbounds: clock keeps bleeding
 }
 
 /* ---------------- drawing: field ---------------- */
@@ -2088,6 +2156,7 @@ function resetGame(){
   G.convChoice=false;G.conversion=false;G.kick=null;G.rampage=0;
   G._ly=0;G._lc=0;G.fdDraw=undefined;G.halftimeDone=false;G.lastChance=false;
   G.kickChoice=false;G.simBoost=false;G.timeouts=3;G.clockRunning=false;
+  G.gstats={};G.playCtx=null;
 }
 // patch original onButton to handle playcall ids defined later
 const _origOnButton=onButton;
@@ -2417,10 +2486,50 @@ function frame(now){
       if(G.tour) pixelText(win?ROUND_NAMES[G.tour.round]+' — SURVIVED':'ELIMINATED FROM THE INVITATIONAL',
         W/2,H*0.715,16,win?'#7dff6a':'#ff8080',null,true);
       if(Math.floor(G.t*2)%2===0)
-        pixelText(G.tour?(win?'TAP FOR THE BRACKET':'TAP. GO HOME.'):'TAP FOR REMATCH',W/2,H*0.78,24,'#fff','#000',true);
+        pixelText('TAP FOR THE BOX SCORE',W/2,H*0.78,24,'#fff','#000',true);
       pixelText('EST. 1994 • SHIPPED 2026',W/2,H*0.9,14,'#777',null,true);
       drawFxScreen2();
-      if(tapped&&G.t>1.0){
+      if(tapped&&G.t>1.0) setState('boxscore');
+      break; }
+    case 'boxscore': {
+      ctx.fillStyle='#0b0b1c';ctx.fillRect(0,0,W,H);
+      pixelText('BOX SCORE',W/2,64,30,'#fff200','#000',true);
+      pixelText('SKL '+G.score.you+' — '+TEAM_CPU.abbr+' '+G.score.cpu,W/2,98,18,'#aaa',null,true);
+      const gs=G.gstats||{}, car=loadCareers();
+      const v=(s,k)=>(s&&s[k])||0;
+      let y=150;
+      const row=(who,line,careerLine)=>{
+        pixelText('#'+who.num+' '+who.name,40,y,18,'#00e5cf',null,false);
+        pixelText(line,40,y+22,16,'#fff',null,false);
+        if(careerLine) pixelText(careerLine,40,y+41,12,'#777',null,false);
+        y+=72;
+      };
+      const q=gs[ROSTER.QB.name], cq=car[ROSTER.QB.name];
+      row(ROSTER.QB,
+        v(q,'comp')+'/'+v(q,'att')+', '+v(q,'passYds')+' YDS, '+v(q,'passTD')+' TD'
+          +(v(q,'int')?', '+v(q,'int')+' INT':'')+(v(q,'rushYds')?'  •  '+v(q,'rushYds')+' RUSH':''),
+        cq?('CAREER: '+(cq.passYds||0)+' YDS, '+(cq.passTD||0)+' TD, '+(cq.games||0)+' GAMES'):null);
+      const r2=gs[ROSTER.RB.name], cr=car[ROSTER.RB.name];
+      row(ROSTER.RB,
+        v(r2,'rushYds')+' RUSH YDS, '+v(r2,'rushTD')+' TD'
+          +(v(r2,'rec')?'  •  '+v(r2,'rec')+' REC '+v(r2,'recYds')+' YDS':'')
+          +(v(r2,'vhh')?'  •  '+v(r2,'vhh')+' VHH':''),
+        cr?('CAREER: '+(cr.rushYds||0)+' RUSH YDS, '+(cr.rushTD||0)+' TD'):null);
+      for(const key of ['WRA','WRB']){
+        const w2=gs[ROSTER[key].name], cw=car[ROSTER[key].name];
+        row(ROSTER[key],
+          v(w2,'rec')+' REC, '+v(w2,'recYds')+' YDS, '+v(w2,'recTD')+' TD',
+          cw?('CAREER: '+(cw.recYds||0)+' REC YDS, '+(cw.recTD||0)+' TD'):null);
+      }
+      const rt=gs[ROSTER.RET.name];
+      if(v(rt,'retYds')||v(rt,'retTD'))
+        row(ROSTER.RET,v(rt,'retYds')+' RETURN YDS'+(v(rt,'retTD')?', '+v(rt,'retTD')+' TD':''),null);
+      const kk2=gs[ROSTER.K.name];
+      if(v(kk2,'fga')||v(kk2,'xpa'))
+        row(ROSTER.K,v(kk2,'fgm')+'/'+v(kk2,'fga')+' FG, '+v(kk2,'xpm')+'/'+v(kk2,'xpa')+' XP',null);
+      if(Math.floor(G.t*2)%2===0)
+        pixelText(G.tour?(G.result==='win'?'TAP FOR THE BRACKET':'TAP. GO HOME.'):'TAP FOR REMATCH',W/2,H*0.93,20,'#fff','#000',true);
+      if(tapped&&G.t>0.4){
         if(G.tour){
           if(G.result==='win') advanceTournament();
           else { G.tour=null; setState('title'); }
