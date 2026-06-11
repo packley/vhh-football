@@ -1101,7 +1101,7 @@ function endQuarter(){
       // they have the ball, the lead, and your fate: watch them kneel
       queueBanner(['BRUISERS KNEEL IT OUT','...','THAT’S THE GAME'],()=>{G.clock=0;finishGame();});
     } else finishGame();
-  } else startYourDrive(modeFromSim());
+  } else startYourDrive(G.quarter===3?'kickoff':modeFromSim()); // the 2nd half always opens with a kickoff
 }
 function finishGame(){
   G.result=G.score.you>G.score.cpu?'win':'lose';
