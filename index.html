@@ -1153,6 +1153,29 @@ function resolveKick(){
     side:Math.sign(k.pos-0.5)||1,offCenter,window:k.window};
   setState('kickanim');
 }
+// a real official: stripes, cap, and the two signals that matter
+function drawRef(x,y,s,pose,t){
+  ctx.save(); ctx.translate(x,y); ctx.scale(s,s);
+  const r=(c,a,b,w,h)=>{ctx.fillStyle=c;ctx.fillRect(a,b,w,h);};
+  r('#e8e8e8',-3,5,2,6); r('#e8e8e8',1,5,2,6);   // white pants
+  r('#111',-4,11,3,2); r('#111',1,11,3,2);        // shoes
+  r('#fff',-4,-3,8,8);                            // shirt
+  r('#111',-3,-3,1,8); r('#111',-1,-3,1,8);       // the stripes
+  r('#111',1,-3,1,8); r('#111',3,-3,1,8);
+  if(pose==='good'){            // TOUCHDOWN ARMS
+    r('#fff',-6,-10,2,8); r('#fff',4,-10,2,8);
+    r('#e8b88a',-6,-12,2,2); r('#e8b88a',4,-12,2,2);
+  } else if(pose==='no'){       // the wave-off, animated
+    const o=Math.sin((t||0)*10)*2;
+    r('#fff',-9,-2+o,5,2); r('#fff',4,-2-o,5,2);
+    r('#e8b88a',-11,-2+o,2,2); r('#e8b88a',9,-2-o,2,2);
+  } else {                      // hands at his sides, judging you
+    r('#fff',-6,-2,2,6); r('#fff',4,-2,2,6);
+  }
+  r('#e8b88a',-2,-7,4,4);       // head
+  r('#111',-2,-9,4,2);          // cap
+  ctx.restore();
+}
 // the shared field-level backdrop: behind the kicker, facing the uprights
 function drawKickScene(type,distYds){
   ctx.fillStyle='#0b0b1c'; ctx.fillRect(0,0,W,H); // night sky
@@ -2148,6 +2171,7 @@ function frame(now){
       k.pos+=k.dir*dt*1.4;
       if(k.pos>1){k.pos=1;k.dir=-1;} if(k.pos<0){k.pos=0;k.dir=1;}
       drawKickScene(k.type,k.distYds);
+      if(k.type!=='punt'){ drawRef(108,545,2.2,'idle'); drawRef(372,545,2.2,'idle'); }
       // kicker set and waiting, ball on the tee
       drawBigGuy(150,610,TEAM_YOU,'brace',false,true);
       ctx.fillStyle='#8a4b1f'; ctx.fillRect(235,586,10,14);
@@ -2208,17 +2232,11 @@ function frame(now){
           else { sfx.fail();
             bigText(a.side<0?'WIDE LEFT!':'WIDE RIGHT!',{size:34,color:'#ff5050',dur:1.3}); }
         }
-        if(a.resolved&&a.good&&a.type!=='punt'){ // the refs know it
-          ctx.strokeStyle='#fff'; ctx.lineWidth=3;
-          for(const rx of [108,372]){
-            ctx.beginPath();
-            ctx.moveTo(rx,545); ctx.lineTo(rx,512);
-            ctx.moveTo(rx,518); ctx.lineTo(rx-9,499);
-            ctx.moveTo(rx,518); ctx.lineTo(rx+9,499);
-            ctx.stroke();
-            ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(rx,506,4,0,7); ctx.fill();
-          }
-        }
+      }
+      if(a.type!=='punt'){ // the officials, tracking it the whole way
+        const pose=!a.resolved?'idle':(a.good?'good':'no');
+        drawRef(108,545,2.2,pose,a.t);
+        drawRef(372,545,2.2,pose,a.t);
       }
       drawHUD(); drawFxWorld(0); drawFxScreen();
       if(a.t>RUN+(a.type==='punt'?1.5:2.1)) finishKick();
