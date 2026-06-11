@@ -680,7 +680,7 @@ function setupPlay(type){
   // offense
   const ol1=newPlayer(TEAM_YOU,200,L+0.6,'OL'), ol2=newPlayer(TEAM_YOU,240,L+0.6,'OL'), ol3=newPlayer(TEAM_YOU,280,L+0.6,'OL');
   const qb=newPlayer(TEAM_YOU,240,L+5,'QB');
-  const rb=newPlayer(TEAM_YOU,198,L+5.5,'RB');
+  const rb=newPlayer(TEAM_YOU,212,L+5.5,'RB'); // tight to the QB: quick mesh
   const wrA=newPlayer(TEAM_YOU,70,L+0.6,'WR'); const wrB=newPlayer(TEAM_YOU,410,L+0.6,'WR');
   qb.spd=104; rb.spd=rnd(112,118); wrA.spd=rnd(104,116); wrB.spd=rnd(104,116);
   P.push(ol1,ol2,ol3,qb,rb,wrA,wrB);
@@ -705,14 +705,18 @@ function setupPlay(type){
   // blocking assignments
   ol1.blockTarget=dl1; ol2.blockTarget=dl2; ol3.blockTarget=dl3;
   // pass rush dice (independent of coverage): stone wall / normal / collapse
+  // the instant-collapse roll is a PASS rush phenomenon — run blocking holds
   const rushRoll=Math.random();
-  if(rushRoll<0.20) [ol1,ol2,ol3].forEach(o=>o.blockT=rnd(2.8,4.2));      // all day to throw
-  else if(rushRoll<0.75) [ol1,ol2,ol3].forEach(o=>o.blockT=rnd(1.3,2.4)); // normal pocket
+  if(rushRoll<0.20) [ol1,ol2,ol3].forEach(o=>o.blockT=rnd(2.8,4.2));      // all day
+  else if(rushRoll<0.75||type==='run') [ol1,ol2,ol3].forEach(o=>o.blockT=rnd(1.3,2.4));
   else {                                                                   // line collapses...
     [ol1,ol2,ol3].forEach(o=>o.blockT=rnd(1.0,1.8));
     const whiff=pick([ol1,ol2,ol3]);                                       // ...and one man whiffs:
     whiff.blockT=rnd(0.25,0.6);
     whiff.blockTarget.spd=rnd(110,124);                                    // his rusher comes in HOT
+  }
+  if(type==='run'){ // the backers have to read the mesh before they fill
+    lb1.reaction=rnd(0.6,1.2); lb2.reaction=rnd(0.6,1.2);
   }
   // routes
   if(type==='short'){
@@ -1252,7 +1256,7 @@ function updateLive(dt){
   // past the line and still up: the defense eventually sends everyone
   if(c.hasBall&&c.y<yd2y(G.losYd)&&!G.returnPlay){
     G.crossT=(G.crossT||0)+dt;
-    if(G.crossT>1.4&&!G.cavalry){ G.cavalry=true; sfx.crowd();
+    if(G.crossT>1.8&&!G.cavalry){ G.cavalry=true; sfx.crowd();
       bigText('HERE COMES THE CAVALRY!',{y:H*0.3,size:22,color:'#ff9f50',dur:1.0}); }
   }
   // speed trail while the adrenaline is real
@@ -1268,6 +1272,7 @@ function updateLive(dt){
       r2.moving=true; r2.animT+=dt*1.3;
     } else {
       c.hasBall=false; r2.hasBall=true; G.carrier=r2; G.handoffPending=false;
+      G.catchGrace=0.35; // the exchange is protected, same as a catch
       sfx.catchFx();
     }
   }
@@ -1384,7 +1389,7 @@ function updateLive(dt){
     for(const o of G.players){
       if(o.team===TEAM_YOU&&o.blockTarget===p&&o.blockT>0&&dist(o.x,o.y,p.x,p.y)<26){blocked=true;break;}
     }
-    if(blocked){ p.animT+=dt*0.6; continue; }
+    if(blocked){ p.y-=9*dt; p.animT+=dt*0.6; continue; } // drive-blocked: pushed off the ball
     // coverage before ball is loose
     let tx,ty,speed=p.spd;
     if(p.cover&&G.passWindow&&!G.pastLine){ // DBs on wideouts, LB1 spying the back
@@ -1397,7 +1402,7 @@ function updateLive(dt){
       if(G.ball){ tx=G.ball.tx; ty=G.ball.ty; } // ball in the air: break on the landing spot, not the prone QB
       else { tx=c.x+c.vx*0.28; ty=c.y+c.vy*0.28; }
       // the longer you're loose, the faster they close — ramps to +50%
-      if(G.crossT>0.8) speed*=1+Math.min(0.5,(G.crossT-0.8)*0.22);
+      if(G.crossT>1.4) speed*=1+Math.min(0.5,(G.crossT-1.4)*0.22); // ordinary gains breathe; breakaways still get hunted
     }
     if(G.ball&&p.cover&&G.ball.target===p.cover){ tx=G.ball.tx; ty=G.ball.ty; speed=p.spd*1.15; }
     const dx=tx-p.x, dy=ty-p.y, m=Math.hypot(dx,dy);
