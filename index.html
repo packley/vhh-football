@@ -1021,6 +1021,13 @@ function modeFromSim(){
 }
 function endOfYourDrive(){
   if(G.ot){ finishGame(); return; }
+  if(G.lastChance){ // the last chance is spent, however it went
+    G.lastChance=false;
+    if(G.score.you===G.score.cpu){ G.ot=true; G.quarter=5;
+      queueBanner(['YOU TIED IT!','OVERTIME','SCORE OR LOSE'],()=>startYourDrive('kickoff'));
+    } else finishGame();
+    return;
+  }
   if(G.quarter>=4&&G.clock<=0){ endQuarter(); return; } // clock hit zero in the 4th: no Bruisers answer drive
   startSimDrive();
 }
@@ -1070,11 +1077,23 @@ function simResultLines(){
     default: return ['THREE AND OUT','BRUISERS PUNT'];
   }
 }
+function fmtClock(c){ c=Math.max(0,Math.ceil(c)); return Math.floor(c/60)+':'+(c%60<10?'0':'')+c%60; }
 function endQuarter(){
   G.quarter++;
   if(G.quarter>4){
+    const margin=G.score.cpu-G.score.you;
     if(G.score.you===G.score.cpu){ G.ot=true; G.quarter=5;
       queueBanner(['TIED UP!','OVERTIME','SCORE OR LOSE'],()=>startYourDrive('kickoff'));
+    } else if(margin>0&&margin<=8&&G.clock>20){
+      // down one score with clock left: your defense buys you one more drive
+      G.quarter=4; G.lastChance=true;
+      G.clock=Math.max(8,G.clock-rnd(40,70)); // their possession burned most of it
+      const scored=G.lastSimOutcome==='td'||G.lastSimOutcome==='fg';
+      queueBanner(['YOUR DEFENSE GETS IT BACK!','LAST CHANCE — '+fmtClock(G.clock)+' LEFT','SAVE THE SEASON'],
+        ()=>setupReturn(scored?'kick':'punt'));
+    } else if(margin>0&&G.clock>0){
+      // they have the ball, the lead, and your fate: watch them kneel
+      queueBanner(['BRUISERS KNEEL IT OUT','...','THAT’S THE GAME'],()=>{G.clock=0;finishGame();});
     } else finishGame();
   } else startYourDrive(modeFromSim());
 }
@@ -1912,7 +1931,7 @@ function resetGame(){
   G.score={you:0,cpu:0};G.quarter=1;G.ot=false;G.vhhCount=0;G.vhhTaken=0;G.longestPlay=0;
   G.returnPlay=false;G.kickFlight=null;G.lastSimOutcome=null;
   G.convChoice=false;G.conversion=false;G.kick=null;G.rampage=0;
-  G._ly=0;G._lc=0;G.fdDraw=undefined;G.halftimeDone=false;
+  G._ly=0;G._lc=0;G.fdDraw=undefined;G.halftimeDone=false;G.lastChance=false;
 }
 // patch original onButton to handle playcall ids defined later
 const _origOnButton=onButton;
