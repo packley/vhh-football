@@ -1134,7 +1134,8 @@ function updateLive(dt){
   // past the line and still up: the defense eventually sends everyone
   if(c.hasBall&&c.y<yd2y(G.losYd)&&!G.returnPlay){
     G.crossT=(G.crossT||0)+dt;
-    if(G.crossT>2.5&&!G.cavalry){ G.cavalry=true; bigText('HERE COMES THE CAVALRY!',{y:H*0.3,size:22,color:'#ff9f50',dur:1.0}); }
+    if(G.crossT>1.4&&!G.cavalry){ G.cavalry=true; sfx.crowd();
+      bigText('HERE COMES THE CAVALRY!',{y:H*0.3,size:22,color:'#ff9f50',dur:1.0}); }
   }
   // speed trail while the adrenaline is real
   if(c.moving&&(G.catchBurst>0||G.rampage>0||Math.hypot(c.vx,c.vy)>124)){
@@ -1277,7 +1278,8 @@ function updateLive(dt){
       // pursue carrier (with prediction)
       if(G.ball){ tx=G.ball.tx; ty=G.ball.ty; } // ball in the air: break on the landing spot, not the prone QB
       else { tx=c.x+c.vx*0.28; ty=c.y+c.vy*0.28; }
-      if(G.cavalry) speed*=1.15; // the cavalry has arrived
+      // the longer you're loose, the faster they close — ramps to +50%
+      if(G.crossT>0.8) speed*=1+Math.min(0.5,(G.crossT-0.8)*0.22);
     }
     if(G.ball&&p.cover&&G.ball.target===p.cover){ tx=G.ball.tx; ty=G.ball.ty; speed=p.spd*1.15; }
     const dx=tx-p.x, dy=ty-p.y, m=Math.hypot(dx,dy);
