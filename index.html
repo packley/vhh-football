@@ -91,6 +91,12 @@ function mile(who,key,thresh,label){ // milestone callouts, once per game
     sfx.firstDown();
   }
 }
+function mergeStats(dst,src){
+  for(const name in src){
+    const t=dst[name]||(dst[name]={});
+    for(const k in src[name]) if(k[0]!=='_') t[k]=(t[k]||0)+src[name][k];
+  }
+}
 function loadCareers(){ try{ return JSON.parse(localStorage.getItem('vhh_careers')||'{}'); }catch(e){ return {}; } }
 function saveCareers(){
   try{
@@ -1208,6 +1214,7 @@ function finishGame(){
     G.series=s;
   }catch(e){}
   saveCareers();
+  if(G.tour) mergeStats(G.tour.stats,G.gstats); // the Invitational keeps its own books
   setState('gameover');
   if(G.result==='win'){sfx.td();sfx.crowd();} else sfx.fail();
 }
@@ -2112,7 +2119,7 @@ function drawPlaycall(){
 const ROUND_NAMES=['QUARTERFINALS','SEMIFINALS','THE CHAMPIONSHIP'];
 function startTournament(){
   const opps=TEAMS.slice().sort(()=>Math.random()-0.5);
-  G.tour={round:0,lastResults:null,
+  G.tour={round:0,lastResults:null,stats:{},
     matches:[[TEAM_YOU,opps[0]],[opps[1],opps[2]],[opps[3],opps[4]],[opps[5],opps[6]]]};
   setState('bracket');
 }
@@ -2432,6 +2439,18 @@ function frame(now){
       if(T.lastResults){
         pixelText('LAST ROUND:',W/2,y+6,15,'#888',null,true);
         T.lastResults.forEach((r,i)=>pixelText(r,W/2,y+28+i*20,14,'#aaa',null,true));
+        y+=28+T.lastResults.length*20+14;
+      }
+      { // the Invitational stat sheet so far
+        const ts=T.stats||{}, tv=(n,k)=>(ts[n]&&ts[n][k])||0;
+        const D='DIRK THUNDER', R='REX HAMBONE';
+        if(ts[D]||ts[R]){
+          pixelText('INVITATIONAL TOTALS:',W/2,y+6,15,'#888',null,true);
+          pixelText('THUNDER: '+tv(D,'comp')+'/'+tv(D,'att')+', '+tv(D,'passYds')+' YDS, '+tv(D,'passTD')+' TD'
+            +(tv(D,'int')?', '+tv(D,'int')+' INT':''),W/2,y+27,14,'#00e5cf',null,true);
+          pixelText('HAMBONE: '+tv(R,'rushYds')+' RUSH YDS, '+tv(R,'rushTD')+' TD, '+tv(R,'vhh')+' VHH',
+            W/2,y+46,14,'#00e5cf',null,true);
+        }
       }
       if(Math.floor(G.t*2)%2===0)
         pixelText('TAP TO PLAY YOUR GAME',W/2,H*0.92,22,'#fff','#000',true);
@@ -2454,10 +2473,17 @@ function frame(now){
       ctx.beginPath();ctx.arc(tx-40,ty-22,16,Math.PI*0.5,Math.PI*1.5);ctx.stroke(); // handles
       ctx.beginPath();ctx.arc(tx+40,ty-22,16,-Math.PI*0.5,Math.PI*0.5);ctx.stroke();
       pixelText('CHAMPIONS',W/2,H*0.55,44,'#fff200','#7a1010',true);
-      pixelText('OF THE 1994 VHH INVITATIONAL',W/2,H*0.61,18,'#fff',null,true);
-      pixelText('THE SKULLCRUSHERS RULE THE EARTH',W/2,H*0.67,16,'#00e5cf',null,true);
+      pixelText('OF THE 1994 VHH INVITATIONAL',W/2,H*0.60,18,'#fff',null,true);
+      { // tournament run, etched on the trophy
+        const ts=(G.tour&&G.tour.stats)||{}, tv=(n,k)=>(ts[n]&&ts[n][k])||0;
+        pixelText('THUNDER: '+tv('DIRK THUNDER','passYds')+' YDS, '+tv('DIRK THUNDER','passTD')+' TD'
+          +'  •  HAMBONE: '+tv('REX HAMBONE','rushYds')+' YDS, '+tv('REX HAMBONE','rushTD')+' TD',
+          W/2,H*0.655,14,'#00e5cf',null,true);
+        let vhh=0; for(const n in ts) vhh+=ts[n].vhh||0;
+        pixelText('VERY HARD HITS THIS TOURNAMENT: '+vhh,W/2,H*0.69,14,'#7dff6a',null,true);
+      }
       const sr2=seriesText();
-      if(sr2) pixelText(sr2,W/2,H*0.74,15,'#fff200',null,true);
+      if(sr2) pixelText(sr2,W/2,H*0.75,15,'#fff200',null,true);
       pixelText('TEXT HIM. TEXT HIM RIGHT NOW.',W/2,H*0.81,18,'#fff200','#000',true);
       if(Math.floor(G.t*2)%2===0)pixelText('TAP TO RETURN',W/2,H*0.89,18,'#fff','#000',true);
       drawFxScreen2();
