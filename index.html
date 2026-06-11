@@ -54,8 +54,18 @@ const y2yd=y=>y/PPY;
 /* ---------------- teams ---------------- */
 const TEAM_YOU={city:'SMASHVILLE',name:'SKULLCRUSHERS',abbr:'SKL',
   jersey:'#00b8a6',jersey2:'#007d72',helmet:'#101418',stripe:'#00e5cf',skin:'#e8b88a'};
-const TEAM_CPU={city:'BONE COUNTY',name:'BRUISERS',abbr:'BRU',
-  jersey:'#7a2fbf',jersey2:'#54208a',helmet:'#ff7a00',stripe:'#ffffff',skin:'#c98c5f'};
+// the league, est. 1994. pow = how scary their offense is (0..1)
+const TEAMS=[
+  {city:'BONE COUNTY',name:'BRUISERS',abbr:'BRU',jersey:'#7a2fbf',jersey2:'#54208a',helmet:'#ff7a00',stripe:'#ffffff',skin:'#c98c5f',ez:'#4a1d7a',ezTxt:'#ff7a00',pow:0.55},
+  {city:'RUSTBELT',name:'WRECKERS',abbr:'WRK',jersey:'#b85c00',jersey2:'#7a3d00',helmet:'#444a52',stripe:'#ffb700',skin:'#e8b88a',ez:'#5a2e00',ezTxt:'#ffb700',pow:0.45},
+  {city:'TURBO CITY',name:'THUNDERHAWKS',abbr:'THK',jersey:'#e6c800',jersey2:'#9a8600',helmet:'#101418',stripe:'#e6c800',skin:'#c98c5f',ez:'#6b5d00',ezTxt:'#fff05a',pow:0.6},
+  {city:'NEON BAY',name:'NIGHTMARES',abbr:'NGT',jersey:'#ff2fa0',jersey2:'#a91467',helmet:'#0a0a14',stripe:'#00e5ff',skin:'#e8b88a',ez:'#7a0e4c',ezTxt:'#00e5ff',pow:0.65},
+  {city:'GRAVEL PIT',name:'GRINDERS',abbr:'GRN',jersey:'#8a8f98',jersey2:'#5a5f66',helmet:'#c0392b',stripe:'#ffffff',skin:'#c98c5f',ez:'#4a4e54',ezTxt:'#ff6b5a',pow:0.5},
+  {city:'CAPITAL CITY',name:'PUNISHERS',abbr:'PUN',jersey:'#c0392b',jersey2:'#7e241b',helmet:'#101418',stripe:'#c0392b',skin:'#e8b88a',ez:'#5e1a12',ezTxt:'#ff8a7a',pow:0.7},
+  {city:'MULLET FALLS',name:'MAYHEM',abbr:'MAY',jersey:'#1f6fd6',jersey2:'#144a8f',helmet:'#e8d9b0',stripe:'#1f6fd6',skin:'#c98c5f',ez:'#123a6e',ezTxt:'#ffd700',pow:0.5},
+];
+let TEAM_CPU=TEAMS[0]; // the classic grudge, until the tournament says otherwise
+function setOpponent(t){ TEAM_CPU=t; fieldCv=null; } // repaint their endzone
 
 /* ---------------- audio (all synthesized) ---------------- */
 const AU={ctx:null,master:null,on:false};
@@ -927,7 +937,7 @@ function setupReturn(kind){
 }
 
 function recordGain(yds){ if(yds>G.longestPlay) G.longestPlay=Math.round(yds); }
-const TD_QUIPS=['PUT IT ON THE FRIDGE!','1994 WOULD BE PROUD!','SUCK IT, BONE COUNTY!','SEE YOU IN THE END ZONE, NERDS!'];
+function tdQuip(){ return pick(['PUT IT ON THE FRIDGE!','1994 WOULD BE PROUD!','SUCK IT, '+TEAM_CPU.city+'!','SEE YOU IN THE END ZONE, NERDS!']); }
 function afterPlay(){
   const o=G.deadOpts||{};
   const wasReturn=G.returnPlay; G.returnPlay=false;
@@ -948,7 +958,7 @@ function afterPlay(){
       queueBanner(['TOUCHDOWN','SKULLCRUSHERS WIN IT!','+6'],()=>endOfYourDrive());
       return;
     }
-    queueBanner([wasReturn?'RETURN TOUCHDOWN!!':'TOUCHDOWN',pick(TD_QUIPS),'+6'],
+    queueBanner([wasReturn?'RETURN TOUCHDOWN!!':'TOUCHDOWN',tdQuip(),'+6'],
       ()=>{ G.convChoice=true; setState('playcall'); });
     return;
   }
@@ -1020,7 +1030,7 @@ function startYourDrive(mode){
   const stakes=G.quarter>=4?'MAKE IT COUNT. NO REFUNDS.':'MAKE IT COUNT';
   const go=()=>{
     if(mode==='punt'){
-      queueBanner([q,'BRUISERS PUNT IT AWAY','RETURN IT!'],()=>setupReturn('punt'));
+      queueBanner([q,TEAM_CPU.name+' PUNT IT AWAY','RETURN IT!'],()=>setupReturn('punt'));
     } else if(mode==='turnover'){
       const spot=Math.round(rnd(45,68));
       G.losYd=spot; G.down=1; G.toGo=10; G.firstYd=spot-10;
@@ -1054,13 +1064,13 @@ function endOfYourDrive(){
   startSimDrive();
 }
 const SIM_FLAVOR=[
-  'BRUISERS POUND THE ROCK...',
+  'POUNDING THE ROCK...',
   'PLAY ACTION... DEEP DROP...',
   'DRAW PLAY UP THE GUT...',
-  'BRUISERS GO HURRY-UP...',
+  'THEY GO HURRY-UP...',
   'SCREEN PASS DEVELOPING...',
   'QB SCRAMBLES AROUND...',
-  'BRUISERS QB AUDIBLES TO "PLEASE NO"...',
+  'THEIR QB AUDIBLES TO "PLEASE NO"...',
   'THEIR COACH IS JUST POINTING AND SCREAMING...',
 ];
 const SIM_DEF=[
@@ -1085,9 +1095,11 @@ function startSimDrive(){
     else if(roll<0.64){outcome='stuffed';}
     else {outcome='punt';}
   } else {
-    if(roll<0.30){outcome='td';pts=7;}
-    else if(roll<0.52){outcome='fg';pts=3;}
-    else if(roll<0.66){outcome='stuffed';}
+    const p=TEAM_CPU.pow!==undefined?TEAM_CPU.pow:0.55; // better teams score more
+    const tdP=0.18+0.22*p, fgP=tdP+0.16+0.10*p;
+    if(roll<tdP){outcome='td';pts=7;}
+    else if(roll<fgP){outcome='fg';pts=3;}
+    else if(roll<fgP+0.14){outcome='stuffed';}
     else {outcome='punt';}
   }
   G.sim={t:0,step:0,outcome,pts,lines:[pick(SIM_FLAVOR),pick(SIM_FLAVOR)]};
@@ -1099,10 +1111,10 @@ function startSimDrive(){
 }
 function simResultLines(){
   switch(G.sim.outcome){
-    case 'td': return ['BRUISERS TOUCHDOWN','+7 (BOOO!)'];
-    case 'fg': return ['BRUISERS FIELD GOAL','+3'];
+    case 'td': return [TEAM_CPU.name+' TOUCHDOWN','+7 (BOOO!)'];
+    case 'fg': return [TEAM_CPU.name+' FIELD GOAL','+3'];
     case 'stuffed': return [pick(SIM_DEF),'YOUR DEFENSE FORCES A TURNOVER!'];
-    default: return ['THREE AND OUT','BRUISERS PUNT'];
+    default: return ['THREE AND OUT',TEAM_CPU.name+' PUNT'];
   }
 }
 function fmtClock(c){ c=Math.max(0,Math.ceil(c)); return Math.floor(c/60)+':'+(c%60<10?'0':'')+c%60; }
@@ -1121,7 +1133,7 @@ function endQuarter(){
         ()=>setupReturn(scored?'kick':'punt'));
     } else if(margin>0&&G.clock>0){
       // they have the ball, the lead, and your fate: watch them kneel
-      queueBanner(['BRUISERS KNEEL IT OUT','...','THAT’S THE GAME'],()=>{G.clock=0;finishGame();});
+      queueBanner([TEAM_CPU.name+' KNEEL IT OUT','...','THAT’S THE GAME'],()=>{G.clock=0;finishGame();});
     } else finishGame();
   } else startYourDrive(G.quarter===3?'kickoff':modeFromSim()); // the 2nd half always opens with a kickoff
 }
@@ -1564,7 +1576,7 @@ function buildField(){
     c.fillStyle=txtCol; c.fillText(text,0,0);
     c.restore();
   };
-  endzone(Y(-10),'#4a1d7a','BRUISERS','#ff7a00','#2a1045');
+  endzone(Y(-10),TEAM_CPU.ez||'#4a1d7a',TEAM_CPU.name,TEAM_CPU.ezTxt||'#ff7a00','#111');
   endzone(Y(100),'#006e64','SKULLCRUSHERS','#aafff2','#053a35');
   // ---- yard lines ----
   for(let yd=5;yd<100;yd+=5){
@@ -1663,7 +1675,7 @@ function drawHUD(){
   if(G.score.you!==G._ly||G.score.cpu!==G._lc){
     const was=Math.sign(G._ly-G._lc), now2=Math.sign(G.score.you-G.score.cpu);
     if(now2!==was&&now2!==0&&(G._ly||G._lc)){ // not the game's first score
-      bigText(now2>0?'SKULLCRUSHERS TAKE THE LEAD!':'BRUISERS TAKE THE LEAD...',
+      bigText(now2>0?'SKULLCRUSHERS TAKE THE LEAD!':TEAM_CPU.name+' TAKE THE LEAD...',
         {y:H*0.6,size:22,color:now2>0?'#7dff6a':'#b06aff',dur:1.5});
       if(now2>0) sfx.cheer();
     }
@@ -1674,8 +1686,8 @@ function drawHUD(){
   ctx.fillStyle='rgba(8,8,14,0.92)'; ctx.fillRect(0,0,W,54);
   ctx.fillStyle='#00b8a6'; ctx.fillRect(8,8,14,14);
   pixelText('SKL '+G.score.you,30,16,ss,'#fff',null,false);
-  ctx.fillStyle='#7a2fbf'; ctx.fillRect(130,8,14,14);
-  pixelText('BRU '+G.score.cpu,152,16,ss,'#fff',null,false);
+  ctx.fillStyle=TEAM_CPU.jersey; ctx.fillRect(130,8,14,14);
+  pixelText(TEAM_CPU.abbr+' '+G.score.cpu,152,16,ss,'#fff',null,false);
   // berserk vignette
   if(G.rampage>0){
     const a=0.10+0.06*Math.sin(G.titleT*10+G.t*10);
@@ -2028,13 +2040,46 @@ function drawPlaycall(){
   drawButtons();
 }
 
+/* ---------------- tournament: the VHH Invitational ---------------- */
+const ROUND_NAMES=['QUARTERFINALS','SEMIFINALS','THE CHAMPIONSHIP'];
+function startTournament(){
+  const opps=TEAMS.slice().sort(()=>Math.random()-0.5);
+  G.tour={round:0,lastResults:null,
+    matches:[[TEAM_YOU,opps[0]],[opps[1],opps[2]],[opps[3],opps[4]],[opps[5],opps[6]]]};
+  setState('bracket');
+}
+function startTourGame(){
+  const m=G.tour.matches.find(mm=>mm[0]===TEAM_YOU||mm[1]===TEAM_YOU);
+  setOpponent(m[0]===TEAM_YOU?m[1]:m[0]);
+  resetGame(); startYourDrive();
+}
+function advanceTournament(){ // you won — settle the rest of the round
+  const T=G.tour, winners=[], res=[];
+  for(const m of T.matches){
+    if(m[0]===TEAM_YOU||m[1]===TEAM_YOU){
+      winners.push(TEAM_YOU);
+      res.push('SKL DEF '+(m[0]===TEAM_YOU?m[1]:m[0]).abbr+'  '+G.score.you+'—'+G.score.cpu);
+    } else {
+      const aw=Math.random()<m[0].pow/(m[0].pow+m[1].pow);
+      const w=aw?m[0]:m[1], l=aw?m[1]:m[0];
+      const ws=pick([17,20,21,24,27,28,31,34]);
+      res.push(w.abbr+' DEF '+l.abbr+'  '+ws+'—'+Math.max(0,ws-pick([3,4,7,10,14,17,21])));
+      winners.push(w);
+    }
+  }
+  T.lastResults=res;
+  if(T.round===2){ setState('champion'); sfx.td(); sfx.cheer(); sfx.crowd(); return; }
+  T.round++;
+  T.matches=[]; for(let i=0;i<winners.length;i+=2) T.matches.push([winners[i],winners[i+1]]);
+  setState('bracket');
+}
+
 /* ---------------- state machine glue ---------------- */
 function onButtonPlaycall(id){}
 function advanceTap(){
   if(G.state==='intro'){ if(G.introT>0.5){ stopIntroMusic(); setState('title'); } return; }
-  if(G.state==='title'){ sfx.jingle(); setState(G.howSeen?'banner':'howto');
-    if(G.howSeen){ resetGame(); startYourDrive(); } return; }
-  if(G.state==='howto'){ G.howSeen=true; resetGame(); startYourDrive(); return; }
+  if(G.state==='title'){ sfx.jingle(); setState(G.howSeen?'mode':'howto'); return; }
+  if(G.state==='howto'){ G.howSeen=true; setState('mode'); return; }
   if(G.state==='gameover'&&G.t>1.2){ setState('title'); return; }
 }
 function resetGame(){
@@ -2048,6 +2093,12 @@ function resetGame(){
 const _origOnButton=onButton;
 onButton=function(id){
   if(!id) return;
+  if(G.state==='mode'){
+    sfx.ui();
+    if(id==='mode_quick'){ G.tour=null; setOpponent(TEAMS[0]); resetGame(); startYourDrive(); }
+    if(id==='mode_tourney'){ startTournament(); }
+    return;
+  }
   if(G.state==='playcall'){
     sfx.ui();
     if(id==='play_to'){
@@ -2176,7 +2227,7 @@ function frame(now){
       const s=G.sim; s.t+=dt;
       drawField(G.camY); drawHUD(); drawFxScreen();
       ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(0,H*0.25,W,H*0.42);
-      pixelText('BRUISERS BALL...',W/2,H*0.31,26,'#b06aff','#000',true);
+      pixelText(TEAM_CPU.name+' BALL...',W/2,H*0.31,26,'#b06aff','#000',true);
       if(s.t>0.8)pixelText(s.lines[0],W/2,H*0.40,18,'#ccc',null,true);
       if(s.t>1.7)pixelText(s.lines[1],W/2,H*0.46,18,'#ccc',null,true);
       if(s.t>1.0&&!s.c1){s.c1=true;sfx.thud();}
@@ -2284,6 +2335,65 @@ function frame(now){
       drawHUD(); drawFxWorld(0); drawFxScreen();
       if(a.t>RUN+(a.type==='punt'?1.5:2.1)) finishKick();
       break; }
+    case 'mode': {
+      if(buttons.length===0){
+        buttons.push({id:'mode_quick',rect:true,x:40,y:H*0.40,w:W-80,h:88,label:'QUICK GAME',sub:'THE CLASSIC GRUDGE: VS THE BRUISERS'});
+        buttons.push({id:'mode_tourney',rect:true,x:40,y:H*0.40+104,w:W-80,h:88,label:'TOURNAMENT',sub:'THE 1994 INVITATIONAL: 8 TEAMS, 1 CROWN'});
+      }
+      ctx.fillStyle='#0b0b1c';ctx.fillRect(0,0,W,H);
+      pixelText('CHOOSE YOUR VIOLENCE',W/2,H*0.22,30,'#fff200','#000',true);
+      drawButtons();
+      break; }
+    case 'bracket': {
+      const T=G.tour;
+      ctx.fillStyle='#0b0b1c';ctx.fillRect(0,0,W,H);
+      pixelText('THE VHH INVITATIONAL',W/2,70,26,'#fff200','#000',true);
+      pixelText(ROUND_NAMES[T.round],W/2,108,22,'#fff','#000',true);
+      let y=170;
+      for(const m of T.matches){
+        const mine=m[0]===TEAM_YOU||m[1]===TEAM_YOU;
+        if(mine){ ctx.strokeStyle='#fff200'; ctx.lineWidth=3; ctx.strokeRect(60,y-24,W-120,82); }
+        [m[0],m[1]].forEach((t2,i)=>{
+          ctx.fillStyle=t2.jersey; ctx.fillRect(86,y-12+i*36,18,18);
+          pixelText(t2.city+' '+t2.name,116,y-3+i*36,17,t2===TEAM_YOU?'#00e5cf':'#ddd',null,false);
+        });
+        pixelText(mine?'YOU':'SIM',W-86,y+15,14,mine?'#fff200':'#666',null,true);
+        y+=104;
+      }
+      if(T.lastResults){
+        pixelText('LAST ROUND:',W/2,y+6,15,'#888',null,true);
+        T.lastResults.forEach((r,i)=>pixelText(r,W/2,y+28+i*20,14,'#aaa',null,true));
+      }
+      if(Math.floor(G.t*2)%2===0)
+        pixelText('TAP TO PLAY YOUR GAME',W/2,H*0.92,22,'#fff','#000',true);
+      if(tapped&&G.t>0.4) startTourGame();
+      break; }
+    case 'champion': {
+      ctx.fillStyle='#0b0b1c';ctx.fillRect(0,0,W,H);
+      for(let i=0;i<4;i++){
+        const fx=(i*120+60+Math.sin(G.t*2+i*2)*30);
+        spawnLite(fx,140+((G.t*150+i*180)%420));
+      }
+      // the trophy
+      const tx=W/2,ty=H*0.36;
+      ctx.fillStyle='#ffd700';
+      ctx.fillRect(tx-34,ty-50,68,14);                  // rim
+      ctx.beginPath();ctx.moveTo(tx-34,ty-36);ctx.lineTo(tx+34,ty-36);ctx.lineTo(tx+14,ty+8);ctx.lineTo(tx-14,ty+8);ctx.fill(); // bowl
+      ctx.fillRect(tx-5,ty+8,10,26);                    // stem
+      ctx.fillRect(tx-26,ty+34,52,10);                  // base
+      ctx.strokeStyle='#ffd700';ctx.lineWidth=6;
+      ctx.beginPath();ctx.arc(tx-40,ty-22,16,Math.PI*0.5,Math.PI*1.5);ctx.stroke(); // handles
+      ctx.beginPath();ctx.arc(tx+40,ty-22,16,-Math.PI*0.5,Math.PI*0.5);ctx.stroke();
+      pixelText('CHAMPIONS',W/2,H*0.55,44,'#fff200','#7a1010',true);
+      pixelText('OF THE 1994 VHH INVITATIONAL',W/2,H*0.61,18,'#fff',null,true);
+      pixelText('THE SKULLCRUSHERS RULE THE EARTH',W/2,H*0.67,16,'#00e5cf',null,true);
+      const sr2=seriesText();
+      if(sr2) pixelText(sr2,W/2,H*0.74,15,'#fff200',null,true);
+      pixelText('TEXT HIM. TEXT HIM RIGHT NOW.',W/2,H*0.81,18,'#fff200','#000',true);
+      if(Math.floor(G.t*2)%2===0)pixelText('TAP TO RETURN',W/2,H*0.89,18,'#fff','#000',true);
+      drawFxScreen2();
+      if(tapped&&G.t>1.0){ G.tour=null; setState('title'); }
+      break; }
     case 'gameover': {
       ctx.fillStyle='#0b0b1c';ctx.fillRect(0,0,W,H);
       const win=G.result==='win';
@@ -2293,9 +2403,9 @@ function frame(now){
           spawnLite(fx,600-fy+120);
         }
       }
-      pixelText(win?'SKULLCRUSHERS':'BRUISERS',W/2,H*0.18,40,win?'#00e5cf':'#b06aff','#000',true);
+      pixelText(win?'SKULLCRUSHERS':TEAM_CPU.name,W/2,H*0.18,40,win?'#00e5cf':TEAM_CPU.stripe,'#000',true);
       pixelText(win?'WIN!':(G.score.you===G.score.cpu?'WIN IN OT!':'WIN!'),W/2,H*0.24,48,'#fff200','#000',true);
-      pixelText('FINAL: SKL '+G.score.you+' — BRU '+G.score.cpu,W/2,H*0.34,24,'#fff',null,true);
+      pixelText('FINAL: SKL '+G.score.you+' — '+TEAM_CPU.abbr+' '+G.score.cpu,W/2,H*0.34,24,'#fff',null,true);
       if(!win&&G.score.you===G.score.cpu)
         pixelText('OT RULE: SCORE OR LOSE. YOU KNOW WHAT YOU DID.',W/2,H*0.385,14,'#999',null,true);
       const sr=seriesText();
@@ -2304,10 +2414,18 @@ function frame(now){
       pixelText('VERY HARD HITS RECEIVED: '+G.vhhTaken,W/2,H*0.49,20,'#ff8080',null,true);
       pixelText('LONGEST PLAY: '+G.longestPlay+' YDS',W/2,H*0.54,20,'#9fd8ff',null,true);
       pixelText(win?'TEXT YOUR FRIEND. TALK TRASH.':'REMATCH. IMMEDIATELY.',W/2,H*0.66,22,'#fff200','#000',true);
-      if(Math.floor(G.t*2)%2===0)pixelText('TAP FOR REMATCH',W/2,H*0.78,24,'#fff','#000',true);
+      if(G.tour) pixelText(win?ROUND_NAMES[G.tour.round]+' — SURVIVED':'ELIMINATED FROM THE INVITATIONAL',
+        W/2,H*0.715,16,win?'#7dff6a':'#ff8080',null,true);
+      if(Math.floor(G.t*2)%2===0)
+        pixelText(G.tour?(win?'TAP FOR THE BRACKET':'TAP. GO HOME.'):'TAP FOR REMATCH',W/2,H*0.78,24,'#fff','#000',true);
       pixelText('EST. 1994 • SHIPPED 2026',W/2,H*0.9,14,'#777',null,true);
       drawFxScreen2();
-      if(tapped&&G.t>1.0) setState('title');
+      if(tapped&&G.t>1.0){
+        if(G.tour){
+          if(G.result==='win') advanceTournament();
+          else { G.tour=null; setState('title'); }
+        } else setState('title');
+      }
       break; }
   }
   ctx.restore();
