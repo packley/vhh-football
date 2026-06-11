@@ -1135,23 +1135,49 @@ function startKickMeter(type){
 function resolveKick(){
   const k=G.kick; G.kick=null;
   const offCenter=Math.abs(k.pos-0.5)*2; // 0 = perfect
-  if(k.type==='punt'){ // punt: accuracy = hang time and distance
+  if(k.type==='punt'){ // punt: accuracy = hang time and distance; flight first, numbers after
     const yds=Math.round(34+(1-offCenter)*26);
-    sfx.thud();
-    queueBanner([yds+' YARD PUNT',offCenter<0.25?'ABSOLUTE MOONSHOT':'GOOD COVERAGE'],()=>endOfYourDrive());
+    G.kickAnim={t:0,type:'punt',distYds:null,good:true,doink:false,
+      side:Math.sign(k.pos-0.5)||1,offCenter,window:0.5,
+      puntYds:yds,puntLine:offCenter<0.25?'ABSOLUTE MOONSHOT':'GOOD COVERAGE'};
+    setState('kickanim');
     return;
   }
-  // FG/XP: watch it fly
+  // FG/XP: same view, your tap becomes the flight
   const good=offCenter<=k.window;
   const doink=!good&&offCenter<=k.window*1.22; // juuust missed the window: post city
-  G.kickAnim={t:0,dur:1.4,type:k.type,distYds:k.distYds,good,doink,
-    side:Math.sign(k.pos-0.5)||1,offCenter,window:k.window,
-    fromY:yd2y(k.type==='xp'?2:G.losYd)};
+  G.kickAnim={t:0,type:k.type,distYds:k.distYds,good,doink,
+    side:Math.sign(k.pos-0.5)||1,offCenter,window:k.window};
   setState('kickanim');
-  sfx.thud(); noise(0.4,0.12,3000); // the boot, and air
+}
+// the shared field-level backdrop: behind the kicker, facing the uprights
+function drawKickScene(type,distYds){
+  ctx.fillStyle='#0b0b1c'; ctx.fillRect(0,0,W,H); // night sky
+  if(!G.kickCrowd){ G.kickCrowd=[];
+    for(let i=0;i<420;i++) G.kickCrowd.push({x:Math.random()*W,y:60+Math.random()*238,
+      c:pick(['#3a3a4e','#54465c','#4e5a46','#5c4646','#46505c','#6b6b7a'])});
+  }
+  for(const cd of G.kickCrowd){ ctx.fillStyle=cd.c; ctx.fillRect(cd.x,cd.y,4,4); }
+  ctx.fillStyle='#0a0a12'; ctx.fillRect(0,300,W,14); // stadium wall
+  ctx.fillStyle='#1c7a2e'; ctx.fillRect(0,314,W,H-314); // the field, receding
+  ctx.fillStyle='rgba(0,0,0,0.08)';
+  for(let y=314;y<H;y+=56) ctx.fillRect(0,y,W,28); // mow bands for depth
+  ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fillRect(0,520,W,3); // the goal line, way out there
+  if(type!=='punt'){ // goalposts facing us: uprights at x 130/342, crossbar y~392
+    ctx.fillStyle='#ffd700';
+    ctx.fillRect(236,400,8,74);
+    ctx.fillRect(130,392,220,8);
+    ctx.fillRect(130,170,8,228); ctx.fillRect(342,170,8,228);
+    ctx.fillStyle='#caa400'; ctx.fillRect(228,468,24,10);
+  }
+  pixelText(type==='xp'?'EXTRA POINT':(type==='punt'?'PUNT':distYds+' YARDS OUT'),W/2,80,22,'#fff200','#000',true);
 }
 function finishKick(){
   const a=G.kickAnim; G.kickAnim=null;
+  if(a.type==='punt'){
+    queueBanner([a.puntYds+' YARD PUNT',a.puntLine],()=>endOfYourDrive());
+    return;
+  }
   if(a.type==='xp'){
     if(a.good){ G.score.you+=1; queueBanner(['EXTRA POINT','GOOD. AS EXPECTED.','+1'],()=>afterScoreFlow()); }
     else queueBanner(['THE EXTRA POINT...','HE MISSED THE AUTOMATIC ONE.','GROUNDS FOR DIVORCE'],()=>afterScoreFlow());
@@ -2111,44 +2137,32 @@ function frame(now){
       }
       if(s.t>4.2){ G.lastSimOutcome=s.outcome; G.sim=null; endQuarter(); }
       break; }
-    case 'kickmeter': {
+    case 'kickmeter': { // aiming happens INSIDE the field-level view
       const k=G.kick;
       k.t+=dt;
       k.pos+=k.dir*dt*1.4;
       if(k.pos>1){k.pos=1;k.dir=-1;} if(k.pos<0){k.pos=0;k.dir=1;}
-      drawField(G.camY); drawHUD(); drawFxScreen();
-      ctx.fillStyle='rgba(0,0,0,0.6)';ctx.fillRect(0,H*0.3,W,H*0.34);
-      pixelText(k.type==='fg'?k.distYds+' YD FIELD GOAL':(k.type==='xp'?'EXTRA POINT':'PUNT'),W/2,H*0.36,28,'#fff200','#000',true);
-      pixelText('TAP TO KICK!',W/2,H*0.42,20,'#fff','#000',true);
-      const bx=W*0.12,bw=W*0.76,by=H*0.50;
+      drawKickScene(k.type,k.distYds);
+      // kicker set and waiting, ball on the tee
+      drawBigGuy(150,610,TEAM_YOU,'brace',false,true);
+      ctx.fillStyle='#8a4b1f'; ctx.fillRect(235,586,10,14);
+      ctx.fillStyle='#fff'; ctx.fillRect(239,590,2,6);
+      // the meter, on the turf in front of you
+      pixelText('TAP TO KICK!',W/2,668,20,'#fff','#000',true);
+      const bx=W*0.12,bw=W*0.76,by=700;
+      ctx.fillStyle='rgba(0,0,0,0.45)';ctx.fillRect(bx-8,by-10,bw+16,40);
       ctx.fillStyle='rgba(255,255,255,0.2)';ctx.fillRect(bx,by,bw,20);
       const win=k.type==='punt'?0.5:k.window;
       ctx.fillStyle='rgba(125,255,106,0.5)';
       ctx.fillRect(bx+bw*(0.5-win/2),by,bw*win,20);
       ctx.fillStyle='#fff';ctx.fillRect(bx+bw*k.pos-2,by-5,4,30);
+      drawHUD(); drawFxScreen();
       if(tapped||k.t>4.2) resolveKick(); // hesitate forever and the snap gets away from you
       break; }
-    case 'kickanim': { // field-level view: behind the kicker, looking at the uprights
+    case 'kickanim': { // ...and the same view continues: YOUR tap becomes the flight
       const a=G.kickAnim; a.t+=dt;
-      ctx.fillStyle='#0b0b1c'; ctx.fillRect(0,0,W,H); // night sky
-      if(!G.kickCrowd){ G.kickCrowd=[];
-        for(let i=0;i<420;i++) G.kickCrowd.push({x:Math.random()*W,y:60+Math.random()*238,
-          c:pick(['#3a3a4e','#54465c','#4e5a46','#5c4646','#46505c','#6b6b7a'])});
-      }
-      for(const cd of G.kickCrowd){ ctx.fillStyle=cd.c; ctx.fillRect(cd.x,cd.y,4,4); }
-      ctx.fillStyle='#0a0a12'; ctx.fillRect(0,300,W,14); // stadium wall
-      ctx.fillStyle='#1c7a2e'; ctx.fillRect(0,314,W,H-314); // the field, receding
-      ctx.fillStyle='rgba(0,0,0,0.08)';
-      for(let y=314;y<H;y+=56) ctx.fillRect(0,y,W,28); // mow bands for depth
-      ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fillRect(0,520,W,3); // the goal line, way out there
-      // goalposts facing us: uprights at x 130/342, crossbar y~392
-      ctx.fillStyle='#ffd700';
-      ctx.fillRect(236,400,8,74);
-      ctx.fillRect(130,392,220,8);
-      ctx.fillRect(130,170,8,228); ctx.fillRect(342,170,8,228);
-      ctx.fillStyle='#caa400'; ctx.fillRect(228,468,24,10);
-      pixelText(a.type==='xp'?'EXTRA POINT':a.distYds+' YARDS OUT',W/2,80,22,'#fff200','#000',true);
-      const RUN=0.7, teeX=240, teeY=600;
+      drawKickScene(a.type,a.distYds);
+      const RUN=0.55, teeX=240, teeY=600;
       if(a.t<RUN){ // the approach
         drawBigGuy(150+(a.t/RUN)*74,610,TEAM_YOU,'run',false,true);
         ctx.fillStyle='#8a4b1f'; ctx.fillRect(teeX-5,teeY-14,10,14);
@@ -2158,17 +2172,22 @@ function frame(now){
         drawBigGuy(226,608,TEAM_YOU,'brace',false,true); // follow-through
         const k=Math.min((a.t-RUN)/1.0,1.0);
         // lateral drift: inside the posts, off the post, or wide — per your tap
-        const spread=a.good?(a.offCenter/Math.max(a.window,0.01))*80
+        const spread=a.type==='punt'?(10+a.offCenter*50)
+                    :a.good?(a.offCenter/Math.max(a.window,0.01))*80
                     :(a.doink?106:135+Math.min(85,(a.offCenter-a.window)*220));
         let bx=lerp(teeX,240+a.side*spread,k);
-        let by=teeY-14-500*k+150*k*k; // up and away
-        let scale=1-0.55*k;           // shrinking with distance
+        let by=a.type==='punt'
+          ? teeY-14-620*k+90*k*k       // punts climb higher and just keep going
+          : teeY-14-500*k+150*k*k;     // FG/XP: up and away at the posts
+        let scale=1-0.55*k;            // shrinking with distance
         if(a.doink&&k>=1){ // CLANG. the post wins.
           const pb=a.t-RUN-1.0;
           bx=240+a.side*106; by=236+pb*260; scale=0.45+pb*0.15;
         } else if(k>=1){ // sails on
           const pb=a.t-RUN-1.0;
-          bx+=a.side*(a.good?8:46)*pb; by=236-pb*36; scale=Math.max(0.28,0.45-pb*0.1);
+          bx+=a.side*(a.good?8:46)*pb;
+          by=(a.type==='punt'?56:236)-pb*(a.type==='punt'?220:36);
+          scale=Math.max(0.22,0.45-pb*0.1);
         }
         ctx.save(); ctx.translate(bx,by); ctx.rotate((a.t-RUN)*12); ctx.scale(scale,scale);
         ctx.fillStyle='#8a4b1f'; ctx.fillRect(-7,-5,14,10);
@@ -2176,14 +2195,15 @@ function frame(now){
         ctx.restore();
         if(k>=1&&!a.resolved){
           a.resolved=true;
-          if(a.good){ sfx.td(); sfx.cheer(); flashWhite=0.08; spawnStars(bx,by,10);
+          if(a.type==='punt'){ if(a.offCenter<0.25) bigText('MOONSHOT.',{size:28,color:'#9fd8ff',dur:1.0}); }
+          else if(a.good){ sfx.td(); sfx.cheer(); flashWhite=0.08; spawnStars(bx,by,10);
             bigText('IT’S GOOD!',{size:40,color:'#7dff6a',dur:1.3}); }
           else if(a.doink){ tone(420,0.5,'square',0.3,250); tone(630,0.3,'square',0.15,380); shake=10;
             bigText('DOINK!!',{size:38,color:'#ff9f50',dur:1.3}); }
           else { sfx.fail();
             bigText(a.side<0?'WIDE LEFT!':'WIDE RIGHT!',{size:34,color:'#ff5050',dur:1.3}); }
         }
-        if(a.resolved&&a.good){ // the refs know it
+        if(a.resolved&&a.good&&a.type!=='punt'){ // the refs know it
           ctx.strokeStyle='#fff'; ctx.lineWidth=3;
           for(const rx of [108,372]){
             ctx.beginPath();
@@ -2196,7 +2216,7 @@ function frame(now){
         }
       }
       drawHUD(); drawFxWorld(0); drawFxScreen();
-      if(a.t>RUN+2.1) finishKick();
+      if(a.t>RUN+(a.type==='punt'?1.5:2.1)) finishKick();
       break; }
     case 'gameover': {
       ctx.fillStyle='#0b0b1c';ctx.fillRect(0,0,W,H);
