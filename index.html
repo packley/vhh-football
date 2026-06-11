@@ -654,6 +654,7 @@ const G={
   state:'boot', t:0,
   score:{you:0,cpu:0},
   clock:180,
+  timeouts:3, clockRunning:false,
   quarter:1,
   down:1, toGo:10, losYd:75, firstYd:65,
   players:[], carrier:null, qb:null, receivers:[],
@@ -766,12 +767,13 @@ function setupPlay(type){
   makeLiveButtons();
 }
 function makeLiveButtons(){
+  // bottom row, pulled into the center — clear of where thumbs rest in the corners
   buttons=[];
-  buttons.push({id:'truck',x:W-58,y:H-92,r:38,label:'HIT!',kind:'round'});
+  buttons.push({id:'truck',x:350,y:H-92,r:36,label:'HIT!',kind:'round'});
   if(G.passWindow){
-    buttons.push({id:'throwA',x:54,y:H-92,r:32,label:'A',kind:'round'});
-    buttons.push({id:'throwB',x:138,y:H-92,r:32,label:'B',kind:'round'});
-    buttons.push({id:'throwC',x:222,y:H-92,r:32,label:'C',kind:'round'});
+    buttons.push({id:'throwA',x:100,y:H-92,r:30,label:'A',kind:'round'});
+    buttons.push({id:'throwB',x:180,y:H-92,r:30,label:'B',kind:'round'});
+    buttons.push({id:'throwC',x:260,y:H-92,r:30,label:'C',kind:'round'});
   }
 }
 
@@ -982,8 +984,10 @@ function afterPlay(){
     queueBanner(['TURNOVER','ON DOWNS!'],()=>endOfYourDrive());
     return;
   }
-  if(o.runoff) G.clock=Math.max(0,G.clock-15); // huddle runoff; incompletions and OOB stop the clock
-  if(G.clock<=0){ handleClockExpiry(); return; }
+  // tackled inbounds: the clock KEEPS RUNNING through the huddle.
+  // incompletions, OOB, scores, turnovers: it stops.
+  G.clockRunning=!!o.runoff;
+  if(G.clock<=0){ G.clockRunning=false; handleClockExpiry(); return; }
   setState('playcall');
 }
 // real football: a quarter ending mid-drive just rolls over — you KEEP the ball.
@@ -991,7 +995,7 @@ function afterPlay(){
 function handleClockExpiry(){
   if(G.quarter<4&&!G.ot){
     const oldQ=G.quarter;
-    G.quarter++; G.clock=180;
+    G.quarter++; G.clock=180; G.clockRunning=false;
     const lines=['END OF Q'+oldQ,'DRIVE CONTINUES IN Q'+G.quarter,'SAME BALL. SAME DOWN. MORE VIOLENCE.'];
     if(G.quarter===3&&!G.halftimeDone){ G.halftimeDone=true; lines[2]='HALFTIME SHOW: CANCELED. THE BAND IS SCARED.'; }
     queueBanner(lines,()=>setState('playcall'));
@@ -1009,7 +1013,7 @@ function queueBanner(lines,next){
 /* ---------------- drives / quarters ---------------- */
 function startYourDrive(mode){
   mode=mode||'kickoff';
-  G.clock=180; // your 3:00 of the quarter — the Bruisers' half happens off-screen
+  G.clock=180; G.clockRunning=false; // 3:00 of REAL time — it runs while you dawdle in the huddle
   G.fdDraw=undefined;
   const q='Q'+G.quarter+(G.ot?' — OVERTIME':'')+' — YOUR POSSESSION';
   const stakes=G.quarter>=4?'MAKE IT COUNT. NO REFUNDS.':'MAKE IT COUNT';
@@ -1258,7 +1262,7 @@ function updateLive(dt){
   // move carrier
   const mv=moveVec();
   const preClock=G.clock;
-  G.clock=Math.max(0,G.clock-dt); // clock runs while the play is live
+  G.clock=Math.max(0,G.clock-dt); // real time, one second per second
   if(G.quarter>=4&&G.clock<15&&G.clock>0&&Math.ceil(G.clock)!==Math.ceil(preClock))
     tone(1100,0.05,'square',0.08); // final-seconds dread tick
   G.stumbleT=Math.max(0,(G.stumbleT||0)-dt);
@@ -1309,7 +1313,7 @@ function updateLive(dt){
   // DIVE button appears exactly when a dive is legal
   const canDive=c.hasBall&&!G.dive&&!G.handoffPending&&!G.passWindow&&c.state!=='prone'&&c.y<yd2y(G.losYd)-2;
   const hasDiveBtn=buttons.some(b=>b.id==='dive');
-  if(canDive&&!hasDiveBtn) buttons.push({id:'dive',x:58,y:H-92,r:34,label:'DIVE',kind:'round'});
+  if(canDive&&!hasDiveBtn) buttons.push({id:'dive',x:260,y:H-92,r:32,label:'DIVE',kind:'round'});
   if(!canDive&&hasDiveBtn) buttons=buttons.filter(b=>b.id!=='dive');
   let cspd=(c.state==='prone'||c.state==='diving'||G.handoffPending)?0:c.spd+18; // no steering while flattened, diving, or mid-mesh
   if(G.catchBurst>0) cspd*=1.22;         // fresh-catch adrenaline
@@ -1681,6 +1685,10 @@ function drawHUD(){
   const cs=Math.max(0,Math.ceil(G.clock));
   const clockStr=(G.ot?'OT':'Q'+Math.min(G.quarter,4))+' '+Math.floor(cs/60)+':'+(cs%60<10?'0':'')+cs%60;
   pixelText(clockStr,W-58,16,20,G.clock<30?'#ff5050':'#fff200',null,true);
+  for(let i=0;i<G.timeouts;i++){ ctx.fillStyle='#fff200'; ctx.fillRect(W-92+i*12,28,8,5); } // timeouts left
+  if(G.clockRunning&&['playcall','snap','dead'].includes(G.state)){
+    ctx.fillStyle='#ff5050'; ctx.fillRect(W-110,8,6,6); // the clock is RUNNING, hurry
+  }
   const downs=['1ST','2ND','3RD','4TH'];
   const spot=G.losYd>50?('OWN '+Math.round(100-G.losYd)):('OPP '+Math.round(G.losYd));
   pixelText(downs[Math.min(G.down,4)-1]+' & '+Math.max(1,Math.round(G.toGo))+'  •  BALL ON '+spot,12,40,17,'#bbb',null,false);
@@ -2002,6 +2010,8 @@ function setupPlaycallButtons(){
     defs.push({id:'play_punt',label:'PUNT',sub:'LIVE TO FIGHT AGAIN'});
     if(G.losYd<=33)defs.push({id:'play_fg',label:'FIELD GOAL',sub:Math.round(G.losYd+17)+' YARDS'});
   }
+  if(!G.convChoice&&!G.kickChoice&&G.clockRunning&&G.timeouts>0)
+    defs.push({id:'play_to',label:'TIMEOUT ('+G.timeouts+' LEFT)',sub:'STOP THE CLOCK'});
   const bh=74,gap=12;
   let y=H-(bh+gap)*defs.length-24;
   for(const d of defs){
@@ -2031,7 +2041,7 @@ function resetGame(){
   G.returnPlay=false;G.kickFlight=null;G.lastSimOutcome=null;
   G.convChoice=false;G.conversion=false;G.kick=null;G.rampage=0;
   G._ly=0;G._lc=0;G.fdDraw=undefined;G.halftimeDone=false;G.lastChance=false;
-  G.kickChoice=false;G.simBoost=false;
+  G.kickChoice=false;G.simBoost=false;G.timeouts=3;G.clockRunning=false;
 }
 // patch original onButton to handle playcall ids defined later
 const _origOnButton=onButton;
@@ -2039,6 +2049,14 @@ onButton=function(id){
   if(!id) return;
   if(G.state==='playcall'){
     sfx.ui();
+    if(id==='play_to'){
+      if(G.timeouts>0&&G.clockRunning){
+        G.timeouts--; G.clockRunning=false;
+        sfx.whistle(); bigText('TIMEOUT!',{size:30,color:'#9fd8ff',dur:1.0});
+        buttons=[]; // rebuild without the timeout option
+      }
+      return;
+    }
     if(id==='kick_deep'){ G.kickChoice=false; endOfYourDrive(); return; }
     if(id==='kick_onside'){ G.kickChoice=false; resolveOnside(); return; }
     if(id==='play_xp'){ G.convChoice=false; startKickMeter('xp'); return; }
@@ -2069,6 +2087,15 @@ function frame(now){
 
   if(hitstop>0){ hitstop-=raw; dt=0; } // freeze gameplay during a VERY HARD HIT
   updateFx(raw);                       // fx, shake and shouts always tick
+  // a running clock runs BETWEEN plays too — through the spot, the huddle, your indecision
+  if(!G.convChoice&&!G.kickChoice){
+    if(G.state==='dead'&&G.deadOpts&&G.deadOpts.runoff&&G.clock>0)
+      G.clock=Math.max(0,G.clock-raw);
+    else if(G.clockRunning&&(G.state==='playcall'||G.state==='snap')){
+      G.clock=Math.max(0,G.clock-raw);
+      if(G.clock<=0&&G.state==='playcall'){ G.clockRunning=false; handleClockExpiry(); }
+    }
+  }
 
   ctx.save();
   if(shake>0) ctx.translate(rnd(-shake,shake)*0.5,rnd(-shake,shake)*0.5);
