@@ -734,6 +734,9 @@ function setupPlay(type){
     qb.hasBall=true; G.carrier=qb;
     G.handoffPending=true; G.rbRef=rb;
     G.passWindow=false;
+    // wideouts earn their paycheck: stalk-block the corners across from them
+    wrA.blockTarget=db1; wrA.blockT=rnd(1.4,2.8);
+    wrB.blockTarget=db2; wrB.blockT=rnd(1.4,2.8);
   } else {
     qb.hasBall=true; G.carrier=qb;
   }
@@ -1219,7 +1222,7 @@ function updateLive(dt){
   }
   // blockers shuffle
   for(const p of G.players){
-    if(p.team===TEAM_YOU&&p.role==='OL'){
+    if(p.team===TEAM_YOU&&p.blockTarget){ // anyone with a blocking assignment: line, wedge, or stalk-blocking WRs
       p.blockT-=dt;
       if(p.blockTarget&&p.blockT>0){
         const bd=dist(p.x,p.y,p.blockTarget.x,p.blockTarget.y);
@@ -1253,7 +1256,7 @@ function updateLive(dt){
     // blocked?
     let blocked=false;
     for(const o of G.players){
-      if(o.team===TEAM_YOU&&o.role==='OL'&&o.blockTarget===p&&o.blockT>0&&dist(o.x,o.y,p.x,p.y)<26){blocked=true;break;}
+      if(o.team===TEAM_YOU&&o.blockTarget===p&&o.blockT>0&&dist(o.x,o.y,p.x,p.y)<26){blocked=true;break;}
     }
     if(blocked){ p.animT+=dt*0.6; continue; }
     // coverage before ball is loose
