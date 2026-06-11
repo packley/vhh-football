@@ -939,7 +939,7 @@ function afterPlay(){
     G.losYd=s2; G.down=1; G.toGo=Math.min(10,s2); G.firstYd=Math.max(0,s2-10);
     const own=s2>50;
     queueBanner(['RETURNED TO THE',(own?'OWN ':'BRUISERS ')+Math.round(own?100-s2:s2)+' YARD LINE'],
-      ()=>G.clock<=0?endOfYourDrive():setState('playcall'));
+      ()=>G.clock<=0?handleClockExpiry():setState('playcall'));
     return;
   }
   const spotYd=clamp(y2yd(o.spotY!==undefined?o.spotY:G.carrier.y),0.5,109);
@@ -966,11 +966,23 @@ function afterPlay(){
     return;
   }
   if(o.runoff) G.clock=Math.max(0,G.clock-15); // huddle runoff; incompletions and OOB stop the clock
-  if(G.clock<=0){
-    queueBanner(['TIME EXPIRES',(G.quarter>=4&&!G.ot)?'END OF REGULATION':'END OF THE DRIVE'],()=>endOfYourDrive());
-    return;
-  }
+  if(G.clock<=0){ handleClockExpiry(); return; }
   setState('playcall');
+}
+// real football: a quarter ending mid-drive just rolls over — you KEEP the ball.
+// only the end of regulation (and OT) actually takes it away.
+function handleClockExpiry(){
+  if(G.quarter<4&&!G.ot){
+    const oldQ=G.quarter;
+    G.quarter++; G.clock=180;
+    const lines=['END OF Q'+oldQ,'DRIVE CONTINUES IN Q'+G.quarter,'SAME BALL. SAME DOWN. MORE VIOLENCE.'];
+    if(G.quarter===3&&!G.halftimeDone){ G.halftimeDone=true; lines[2]='HALFTIME SHOW: CANCELED. THE BAND IS SCARED.'; }
+    queueBanner(lines,()=>setState('playcall'));
+  } else if(G.ot){
+    queueBanner(['TIME EXPIRES','NO SCORE IN OVERTIME','THEM’S THE RULES'],()=>endOfYourDrive());
+  } else {
+    queueBanner(['TIME EXPIRES','END OF REGULATION'],()=>endOfYourDrive());
+  }
 }
 function queueBanner(lines,next){
   G.banner={lines,t:0,dur:1.6,next};
