@@ -440,6 +440,7 @@ cv.addEventListener('pointerdown',e=>{
   if(!stick.active){
     stick.active=true; stick.id=e.pointerId; stick.sx=p.x; stick.sy=p.y; stick.dx=0; stick.dy=0;
     stick.downX=p.x; stick.downY=p.y; stick.downT=performance.now(); stick.lastX=p.x; stick.lastY=p.y;
+    stick.preRunDir=G.runDir?{x:G.runDir.x,y:G.runDir.y}:null; // direction BEFORE this gesture
   }
 });
 cv.addEventListener('pointermove',e=>{
@@ -458,30 +459,24 @@ cv.addEventListener('pointermove',e=>{
 function endPointer(e,cancel){
   audioInit(); unlockAudio(); // some iOS versions only unlock audio on touch RELEASE
   if(stick.active&&e.pointerId===stick.id){
-    // quick tap with no movement = throw to the receiver you tapped
-    // (but iOS pointercancel — system gestures, palm rejection — must never count as a tap)
-    const dx=stick.lastX-stick.downX, dy=stick.lastY-stick.downY;
+    // (iOS pointercancel — system gestures, palm rejection — must never count as input)
+    const dx=stick.lastX-stick.downX, dy=stick.lastY-stick.downY, d=Math.hypot(dx,dy);
     const quick=performance.now()-stick.downT<280;
-    if(!cancel&&quick&&Math.hypot(dx,dy)<20)
-      handleLiveTap({x:stick.lastX,y:stick.lastY});
+    if(!cancel&&quick&&d<20){
+      handleLiveTap({x:stick.lastX,y:stick.lastY}); // tap = dive (when you're the runner)
+    } else if(!cancel&&quick&&d>50&&stick.preRunDir){
+      // a quick flick in the direction he's ALREADY running = lay out for it.
+      // (flicks in a new direction are steering; "more of the same" means dive)
+      const dot=(dx/d)*stick.preRunDir.x+(dy/d)*stick.preRunDir.y;
+      if(dot>0.86) tryDive();
+    }
     stick.active=false; stick.dx=0; stick.dy=0; // runDir persists — he keeps running
   }
   for(const id in btnHeld) if(btnHeld[id]===e.pointerId) delete btnHeld[id];
 }
 function handleLiveTap(p){
   if(G.state!=='live'||!G.playLive) return;
-  if(G.passWindow&&!G.ball){
-    const wy=p.y+G.camY; // screen tap -> field position
-    let best=-1,bd=70;
-    G.receivers.forEach((r,i)=>{
-      if(r===G.carrier) return;
-      const d=dist(p.x,wy,r.x,r.y);
-      if(d<bd){ bd=d; best=i; }
-    });
-    if(best>=0) doThrow(best);
-    return;
-  }
-  tryDive(); // no throw on the table: a tap means lay out
+  tryDive(); // throws are buttons/keys only; a tap means lay out
 }
 cv.addEventListener('pointerup',endPointer);
 cv.addEventListener('pointercancel',e=>endPointer(e,true));
@@ -1383,6 +1378,7 @@ function updateLive(dt){
       G.kickFlight=null; G.carrier.hasBall=true;
       sfx.catchFx(); G.catchGrace=0.35; G.catchBurst=0.5;
       bigText('GOT IT! GO!!',{size:26,color:'#9fd8ff',dur:0.7});
+      G.runDir={x:0,y:-1}; // the returner takes off on his own
     }
   }
   if(G.dive){ // airborne: locked trajectory until he lands
@@ -1560,7 +1556,7 @@ function updateLive(dt){
             sfx.catchFx(); bigText('CAUGHT!',{size:24,color:'#9fd8ff',dur:0.6});
             hitstop=Math.max(hitstop,0.06); spawnStars(r.x,r.y,4); // the catch deserves a beat
             G.catchGrace=r.role==='RB'?0.65:0.5; G.catchBurst=0.7;
-            G.runDir=null; // new ball carrier awaits your swipe
+            G.runDir={x:0,y:-1}; // he turns upfield on instinct — steer to refine
             G.receivers.forEach(w=>w.marker=null);
             // shove the swarm off the catch point so the grace window is honest
             for(const p of G.players){
@@ -2062,9 +2058,9 @@ function drawHowTo(){
   pixelText('HOW TO PLAY',W/2,80,36,'#fff200','#000',true);
   const lines=[
     ['SWIPE','HE RUNS THAT WAY  (OR ARROWS/WASD)'],
-    ['TAP YOUR RECEIVER','TO THROW  (OR A/B/C, KEYS Z/X/C)'],
+    ['TAP A / B / C','TO THROW  (KEYS Z/X/C)'],
     ['TAP HIT!','TRUCK A DEFENDER  (SPACE)'],
-    ['TAP (OR DIVE BUTTON)','PAST THE LINE: LAY OUT  (SHIFT)'],
+    ['FLICK FORWARD AGAIN, OR TAP','PAST THE LINE: DIVE  (SHIFT)'],
     ['','RUN UP THE SCREEN. SCORE.'],
     ['','DELIVER VERY HARD HITS.'],
     ['','DO NOT RECEIVE THEM.'],
