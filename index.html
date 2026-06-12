@@ -69,12 +69,13 @@ function setOpponent(t){ TEAM_CPU=t; fieldCv=null; } // repaint their endzone
 
 /* ---------------- the roster, est. 1994 ---------------- */
 const ROSTER={
-  QB: {name:'DIRK THUNDER', num:7,  spd:104},
-  RB: {name:'REX HAMBONE',  num:32, spd:115},
-  WRA:{name:'BUTCH MAGNUM', num:88, spd:112},
-  WRB:{name:'TINY TOLLIVER',num:81, spd:108},
-  RET:{name:'FLASH GIBSON', num:21, spd:114},
-  K:  {name:'IGOR THE FOOT',num:3,  spd:90},
+  QB: {name:'DIRK THUNDER', num:7,  spd:104, pos:'QB', bio:'THROWS A FOOTBALL THROUGH A CAR WASH WITHOUT IT GETTING WET'},
+  RB: {name:'REX HAMBONE',  num:32, spd:115, pos:'RB', bio:'BIT THROUGH A NAIL ON DRAFT DAY. THE NAIL DESERVED IT'},
+  RB2:{name:'CHET OATMEAL', num:44, spd:96,  pos:'RB', bio:'HE TRIES SO HARD'},
+  WRA:{name:'BUTCH MAGNUM', num:88, spd:112, pos:'WR', bio:'LEGALLY CHANGED HIS NAME TO THIS'},
+  WRB:{name:'TINY TOLLIVER',num:81, spd:108, pos:'WR', bio:'6 FOOT 9. THE NAME IS A LIE'},
+  RET:{name:'FLASH GIBSON', num:21, spd:114, pos:'KR', bio:'ONCE RETURNED A KICK THAT HADN’T BEEN KICKED YET'},
+  K:  {name:'IGOR THE FOOT',num:3,  spd:90,  pos:'K',  bio:'THE FOOT IS INSURED. IGOR IS NOT'},
 };
 // per-game stat sheet: G.gstats[name][key]
 function stat(who,key,amt){
@@ -757,8 +758,9 @@ function setupPlay(type){
   const qb=newPlayer(TEAM_YOU,240,L+5,'QB');
   const rb=newPlayer(TEAM_YOU,212,L+5.5,'RB'); // tight to the QB: quick mesh
   const wrA=newPlayer(TEAM_YOU,70,L+0.6,'WR'); const wrB=newPlayer(TEAM_YOU,410,L+0.6,'WR');
-  qb.who=ROSTER.QB; rb.who=ROSTER.RB; wrA.who=ROSTER.WRA; wrB.who=ROSTER.WRB;
-  qb.spd=ROSTER.QB.spd; rb.spd=ROSTER.RB.spd+rnd(-3,3);
+  const rbWho=G.rexOut?ROSTER.RB2:ROSTER.RB; // Chet Oatmeal stands ready
+  qb.who=ROSTER.QB; rb.who=rbWho; wrA.who=ROSTER.WRA; wrB.who=ROSTER.WRB;
+  qb.spd=ROSTER.QB.spd; rb.spd=rbWho.spd+rnd(-3,3);
   wrA.spd=ROSTER.WRA.spd+rnd(-4,4); wrB.spd=ROSTER.WRB.spd+rnd(-4,4);
   G.playCtx={passer:null,catcher:null};
   P.push(ol1,ol2,ol3,qb,rb,wrA,wrB);
@@ -785,16 +787,23 @@ function setupPlay(type){
   // pass rush dice (independent of coverage): stone wall / normal / collapse
   // the instant-collapse roll is a PASS rush phenomenon — run blocking holds
   const rushRoll=Math.random();
-  if(rushRoll<0.20) [ol1,ol2,ol3].forEach(o=>o.blockT=rnd(2.8,4.2));      // all day
-  else if(rushRoll<0.75||type==='run') [ol1,ol2,ol3].forEach(o=>o.blockT=rnd(1.3,2.4));
-  else {                                                                   // line collapses...
+  let rushMode=rushRoll<0.20?'wall':(rushRoll<0.75?'norm':'collapse');
+  if(type==='run'&&rushMode==='collapse') rushMode='norm';           // run blocking holds
+  if(type==='pa'&&rushMode!=='collapse'&&Math.random()<0.35) rushMode='collapse'; // the fake takes time
+  if(rushMode==='wall') [ol1,ol2,ol3].forEach(o=>o.blockT=rnd(2.8,4.2));
+  else if(rushMode==='norm') [ol1,ol2,ol3].forEach(o=>o.blockT=rnd(1.3,2.4));
+  else {
     [ol1,ol2,ol3].forEach(o=>o.blockT=rnd(1.0,1.8));
-    const whiff=pick([ol1,ol2,ol3]);                                       // ...and one man whiffs:
+    const whiff=pick([ol1,ol2,ol3]);
     whiff.blockT=rnd(0.25,0.6);
-    whiff.blockTarget.spd=rnd(110,124);                                    // his rusher comes in HOT
+    whiff.blockTarget.spd=rnd(110,124);
   }
   if(type==='run'){ // the backers have to read the mesh before they fill
     lb1.reaction=rnd(0.6,1.2); lb2.reaction=rnd(0.6,1.2);
+  }
+  if(type==='pa'){ // the backers BOUGHT the fake
+    lb1.reaction=rnd(1.4,2.0); lb2.reaction=rnd(1.4,2.0);
+    lb1.cover=null; // nobody spies a decoy
   }
   // routes
   if(type==='short'){
@@ -804,26 +813,36 @@ function setupPlay(type){
   } else if(type==='hook'){ // sprint, plant, come back to the ball and SIT
     wrA.routePts=[{x:110,y:yd2y(L-13)},{x:132,y:yd2y(L-9.5)}]; wrA.sitAfter=true;
     wrB.routePts=[{x:380,y:yd2y(L-13)},{x:358,y:yd2y(L-9.5)}]; wrB.sitAfter=true;
+  } else if(type==='pa'){ // play action: deep shots behind the frozen backers
+    wrA.routePts=[{x:130,y:yd2y(L-22)}]; wrB.routePts=[{x:360,y:yd2y(L-24)}];
   }
   if(type!=='run'){
     wrA.marker='A'; wrB.marker='B'; G.passWindow=true;
-    // RB runs a real route out of the backfield: wheel (swing then turn upfield)
-    // or an angle route (out, then cut back over the middle)
-    const side=Math.random()<0.5;
-    rb.routePts=Math.random()<0.6
-      ?[{x:side?365:115,y:yd2y(L+0.5)},{x:side?385:95,y:yd2y(L-14)}]  // wheel
-      :[{x:side?330:150,y:yd2y(L-1)},{x:240,y:yd2y(L-11)}];           // angle
-    rb.marker='C'; G.receivers.push(rb);
+    if(type==='pa'){ // RB is a DECOY: sells the fake, then barrels on with nothing
+      rb.decoy=true;
+      rb.routePts=[{x:215,y:yd2y(L-4)},{x:200,y:yd2y(L-12)}];
+      G.receivers.push(rb); // moves like a receiver, can't be thrown to
+    } else {
+      // RB runs a real route out of the backfield: wheel (swing then turn upfield)
+      // or an angle route (out, then cut back over the middle)
+      const side=Math.random()<0.5;
+      rb.routePts=Math.random()<0.6
+        ?[{x:side?365:115,y:yd2y(L+0.5)},{x:side?385:95,y:yd2y(L-14)}]  // wheel
+        :[{x:side?330:150,y:yd2y(L-1)},{x:240,y:yd2y(L-11)}];           // angle
+      rb.marker='C'; G.receivers.push(rb);
+    }
   }
   // carrier
-  if(type==='run'){
-    // QB takes the snap; the back crosses the mesh point and takes the exchange
+  if(type==='run'||type==='pa'){
+    // QB takes the snap; the back crosses the mesh point (and takes it, or doesn't)
     qb.hasBall=true; G.carrier=qb;
     G.handoffPending=true; G.rbRef=rb;
-    G.passWindow=false;
-    // wideouts earn their paycheck: stalk-block the corners across from them
-    wrA.blockTarget=db1; wrA.blockT=rnd(1.4,2.8);
-    wrB.blockTarget=db2; wrB.blockT=rnd(1.4,2.8);
+    G.fakeHandoff=(type==='pa');
+    G.passWindow=(type==='pa');
+    if(type==='run'){ // wideouts stalk-block the corners
+      wrA.blockTarget=db1; wrA.blockT=rnd(1.4,2.8);
+      wrB.blockTarget=db2; wrB.blockT=rnd(1.4,2.8);
+    }
   } else {
     qb.hasBall=true; G.carrier=qb;
   }
@@ -841,7 +860,8 @@ function makeLiveButtons(){
   if(G.passWindow){
     buttons.push({id:'throwA',x:128,y:by,r:30,label:'A',kind:'round'});
     buttons.push({id:'throwB',x:200,y:by,r:30,label:'B',kind:'round'});
-    buttons.push({id:'throwC',x:272,y:by,r:30,label:'C',kind:'round'});
+    if(G.receivers[2]&&!G.receivers[2].decoy)
+      buttons.push({id:'throwC',x:272,y:by,r:30,label:'C',kind:'round'});
   }
 }
 
@@ -928,7 +948,8 @@ function tryDive(){
   bigText('DIVE!',{size:22,color:'#9fd8ff',dur:0.5,y:H*0.52});
 }
 function doThrow(i){
-  if(!G.playLive||!G.passWindow||G.ball) return;
+  if(!G.playLive||!G.passWindow||G.ball||G.handoffPending) return;
+  if(G.receivers[i]&&G.receivers[i].decoy) return; // you cannot throw to a lie
   if(G.pastLine){ bigText('PAST THE LINE!',{size:26,color:'#ff5050'}); return; }
   const r=G.receivers[i]; if(!r) return;
   const qb=G.carrier;
@@ -1078,6 +1099,11 @@ function afterPlay(){
   // incompletions, OOB, scores, turnovers: it stops.
   G.clockRunning=!!o.runoff;
   if(G.clock<=0){ G.clockRunning=false; handleClockExpiry(); return; }
+  if(G.rexOutPending){ // the trainers have seen enough
+    G.rexOutPending=false; G.rexOut=true; G.clockRunning=false;
+    queueBanner(['REX HAMBONE IS QUESTIONABLE','(HIS LEG IS ON BACKWARDS)','ENTER: CHET OATMEAL #44'],()=>setState('playcall'));
+    return;
+  }
   if(G.warn30Pending){ // a VHH original: the league mandates one free moment of dread
     G.warn30Pending=false; G.warn30Used=true; G.clockRunning=false;
     queueBanner(['THIRTY SECOND WARNING','START SWEATING'],()=>setState('playcall'));
@@ -1124,7 +1150,14 @@ function startYourDrive(mode){
       queueBanner([q,'KICKOFF!','RETURN IT!'],()=>setupReturn('kick'));
     }
   };
-  if(G.quarter===3&&!G.halftimeDone){ // the halftime show
+  if(G.rexOut){ // Rex walks it off between drives. always.
+    G.rexOut=false;
+    queueBanner(['REX HAMBONE HAS RETURNED','DO NOT ASK HOW'],()=>{
+      if(G.quarter===3&&!G.halftimeDone){ G.halftimeDone=true;
+        queueBanner(['HALFTIME SHOW: CANCELED.','THE BAND IS SCARED.'],go);
+      } else go();
+    });
+  } else if(G.quarter===3&&!G.halftimeDone){ // the halftime show
     G.halftimeDone=true;
     queueBanner(['HALFTIME SHOW: CANCELED.','THE BAND IS SCARED.'],go);
   } else go();
@@ -1406,12 +1439,16 @@ function updateLive(dt){
     G.ghostT=(G.ghostT||0)-dt;
     if(G.ghostT<=0){ G.ghostT=0.06; spawnGhost(c); }
   }
-  if(G.handoffPending){ // the mesh: RB runs to the QB, ball changes hands on contact
+  if(G.handoffPending){ // the mesh: RB runs to the QB, ball changes hands on contact (or doesn't)
     const r2=G.rbRef;
     const d=dist(r2.x,r2.y,c.x,c.y);
     if(d>13){
       r2.x+=(c.x-r2.x)/d*r2.spd*dt; r2.y+=(c.y-r2.y)/d*r2.spd*dt;
       r2.moving=true; r2.animT+=dt*1.3;
+    } else if(G.fakeHandoff){ // PLAY ACTION: the ball never leaves
+      G.handoffPending=false; G.fakeHandoff=false;
+      bigText('THE FAKE! THE LINEBACKERS BOUGHT A TIMESHARE!',{y:H*0.32,size:17,color:'#9fd8ff',dur:1.2});
+      sfx.thud();
     } else {
       c.hasBall=false; r2.hasBall=true; G.carrier=r2; G.handoffPending=false;
       G.catchGrace=0.35; // the exchange is protected, same as a catch
@@ -1476,6 +1513,7 @@ function updateLive(dt){
   // receivers run routes (multi-waypoint)
   for(const w of G.receivers){
     if(w===c) continue;
+    if(w===G.rbRef&&G.handoffPending) continue; // mid-mesh: the mesh owns him
     if(G.ball&&G.ball.target===w){ // ball's up: forget the route, go get it
       const dx=G.ball.tx-w.x, dy=G.ball.ty-w.y, m=Math.hypot(dx,dy);
       if(m>4){ w.routeVx=dx/m*w.spd; w.routeVy=dy/m*w.spd; }
@@ -1629,6 +1667,10 @@ function tackle(defender){
   const c=G.carrier;
   const rel=Math.hypot(c.vx,c.vy)+defender.spd;
   const mega=rel>150||defender.state==='dive';
+  if(mega&&c.who){ // carnage has a price
+    stat(c.who,'megaTaken',1);
+    if(c.who===ROSTER.RB&&(G.gstats[ROSTER.RB.name].megaTaken||0)>=3&&!G.rexOut) G.rexOutPending=true;
+  }
   c.helmetOn=false; c.state='prone';
   carnage(c.x,c.y,TEAM_YOU,mega);
   G.vhhTaken++;
@@ -2143,6 +2185,7 @@ function setupPlaycallButtons(){
     {id:'play_run',label:'SMASH RUN',sub:'HAND IT TO THE BACK'},
     {id:'play_short',label:'QUICK STRIKE',sub:'SHORT ROUTES A+B'},
     {id:'play_hook',label:'BUTTON HOOKS',sub:'THEY TURN AND COME BACK'},
+    {id:'play_pa',label:'PLAY ACTION',sub:'FAKE TO THE BACK, GO DEEP'},
     {id:'play_bomb',label:'BOMBS AWAY',sub:'DEEP SHOTS A+B'},
   ];
   if(G.kickChoice){ // kicking it back while trailing late: how brave are you?
@@ -2184,16 +2227,27 @@ function startTournament(accel){
     matches:[[TEAM_YOU,opps[0]],[opps[1],opps[2]],[opps[3],opps[4]],[opps[5],opps[6]]]};
   setState('bracket');
 }
+function showLineup(next){
+  G.lineup={t:0,next,cards:[ROSTER.QB,ROSTER.RB,ROSTER.WRA,ROSTER.WRB,ROSTER.RET,ROSTER.K]};
+  setState('lineup');
+}
 function startTourGame(){
   const m=G.tour.matches.find(mm=>mm[0]===TEAM_YOU||mm[1]===TEAM_YOU);
   setOpponent(m[0]===TEAM_YOU?m[1]:m[0]);
   resetGame();
-  if(G.tour.accel){ // BLITZ: down 7-3, 1:30, one drive, touchdown or go home
-    G.suddenDeath=true;
-    G.score={you:3,cpu:7}; G._ly=3; G._lc=7;
-    G.quarter=4; G.clock=90; G.clockRunning=false;
-    queueBanner(['SUDDEN DEATH','DOWN 7–3 — 1:30 LEFT','TOUCHDOWN OR GO HOME'],()=>setupReturn('kick'));
-  } else startYourDrive();
+  if(G.tour.round===0&&!G.tour.lineupShown){ G.tour.lineupShown=true;
+    const accel=G.tour.accel;
+    showLineup(()=>{ if(accel) startBlitzGame(); else startYourDrive(); });
+    return;
+  }
+  if(G.tour.accel) startBlitzGame();
+  else startYourDrive();
+}
+function startBlitzGame(){ // BLITZ: down 7-3, 1:30, one drive, touchdown or go home
+  G.suddenDeath=true;
+  G.score={you:3,cpu:7}; G._ly=3; G._lc=7;
+  G.quarter=4; G.clock=90; G.clockRunning=false;
+  queueBanner(['SUDDEN DEATH','DOWN 7–3 — 1:30 LEFT','TOUCHDOWN OR GO HOME'],()=>setupReturn('kick'));
 }
 function advanceTournament(){ // you won — settle the rest of the round
   const T=G.tour, winners=[], res=[];
@@ -2232,6 +2286,7 @@ function resetGame(){
   G.kickChoice=false;G.simBoost=false;G.timeouts=3;G.clockRunning=false;
   G.gstats={};G.playCtx=null;G.suddenDeath=false;
   G.warn30Used=false;G.warn30Pending=false;G.drivePlays=0;G.driveYds=0;G.driveVhh=0;
+  G.rexOut=false;G.rexOutPending=false;G.fakeHandoff=false;
 }
 // patch original onButton to handle playcall ids defined later
 const _origOnButton=onButton;
@@ -2239,7 +2294,7 @@ onButton=function(id){
   if(!id) return;
   if(G.state==='mode'){
     sfx.ui();
-    if(id==='mode_quick'){ G.tour=null; setOpponent(TEAMS[0]); resetGame(); startYourDrive(); }
+    if(id==='mode_quick'){ G.tour=null; setOpponent(TEAMS[0]); resetGame(); showLineup(()=>startYourDrive()); }
     if(id==='mode_tourney'){ startTournament(false); }
     if(id==='mode_blitz'){ startTournament(true); }
     return;
@@ -2590,6 +2645,21 @@ function frame(now){
       drawHUD(); drawFxWorld(0); drawFxScreen();
       if(a.t>RUN+(isPunt?1.5:(a.blocked?2.2:2.6))) finishKick();
       break; }
+    case 'lineup': { // meet your idiots
+      const L2=G.lineup; L2.t+=dt;
+      const idx=Math.min(L2.cards.length-1,Math.floor(L2.t/0.75));
+      const who=L2.cards[idx];
+      ctx.fillStyle='#0b0b1c';ctx.fillRect(0,0,W,H);
+      pixelText('YOUR 1994 SMASHVILLE SKULLCRUSHERS',W/2,90,20,'#00e5cf','#000',true);
+      pixelText('STARTING LINEUP',W/2,120,16,'#888',null,true);
+      if(idx!==L2.lastIdx){ L2.lastIdx=idx; tone(523+idx*60,0.12,'square',0.1); }
+      drawBigGuy(W/2,H*0.38,TEAM_YOU,'run',false,true);
+      pixelText('#'+who.num+' '+who.name,W/2,H*0.50,28,'#fff200','#000',true);
+      pixelText(who.pos,W/2,H*0.545,18,'#fff',null,true);
+      pixelText(who.bio,W/2,H*0.61,14,'#9fd8ff',null,true);
+      pixelText('TAP TO SKIP',W/2,H*0.9,14,'#555',null,true);
+      if(tapped||L2.t>L2.cards.length*0.75+0.3){ const nx=L2.next; G.lineup=null; nx(); }
+      break; }
     case 'mode': {
       if(buttons.length===0){
         buttons.push({id:'mode_quick',rect:true,x:40,y:H*0.40,w:W-80,h:88,label:'QUICK GAME',sub:'THE CLASSIC GRUDGE: VS THE BRUISERS'});
@@ -2722,6 +2792,9 @@ function frame(now){
           +(v(r2,'rec')?'  •  '+v(r2,'rec')+' REC '+v(r2,'recYds')+' YDS':'')
           +(v(r2,'vhh')?'  •  '+v(r2,'vhh')+' VHH':''),
         cr?('CAREER: '+(cr.rushYds||0)+' RUSH YDS, '+(cr.rushTD||0)+' TD'):null);
+      const ch=gs[ROSTER.RB2.name];
+      if(ch) row(ROSTER.RB2,
+        v(ch,'rushYds')+' RUSH YDS, '+v(ch,'rushTD')+' TD (FILLED IN ADMIRABLY)',null);
       for(const key of ['WRA','WRB']){
         const w2=gs[ROSTER[key].name], cw=car[ROSTER[key].name];
         row(ROSTER[key],
