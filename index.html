@@ -826,7 +826,7 @@ function makeLiveButtons(){
   // bottom row, cluster centered — out from under corner-resting thumbs
   buttons=[];
   const by=H-92;
-  buttons.push({id:'truck',x:352,y:by,r:36,label:'HIT!',kind:'round'});
+  buttons.push({id:'truck',x:W-58,y:by,r:38,label:'HIT!',kind:'round'}); // back home in the corner
   if(G.passWindow){
     buttons.push({id:'throwA',x:128,y:by,r:30,label:'A',kind:'round'});
     buttons.push({id:'throwB',x:200,y:by,r:30,label:'B',kind:'round'});
@@ -1398,7 +1398,7 @@ function updateLive(dt){
   // DIVE button appears exactly when a dive is legal
   const canDive=c.hasBall&&!G.dive&&!G.handoffPending&&!G.passWindow&&c.state!=='prone'&&c.y<yd2y(G.losYd)-2;
   const hasDiveBtn=buttons.some(b=>b.id==='dive');
-  if(canDive&&!hasDiveBtn) buttons.push({id:'dive',x:272,y:H-92,r:32,label:'DIVE',kind:'round'});
+  if(canDive&&!hasDiveBtn) buttons.push({id:'dive',x:58,y:H-92,r:34,label:'DIVE',kind:'round'}); // back home on the left
   if(!canDive&&hasDiveBtn) buttons=buttons.filter(b=>b.id!=='dive');
   let cspd=(c.state==='prone'||c.state==='diving'||G.handoffPending)?0:c.spd+18; // no steering while flattened, diving, or mid-mesh
   if(G.catchBurst>0) cspd*=1.22;         // fresh-catch adrenaline
