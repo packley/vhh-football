@@ -1019,8 +1019,8 @@ function afterPlay(){
     if(wasReturn){ stat(G.carrier.who,'retYds',Math.round(G.losYd)); stat(G.carrier.who,'retTD',1); }
     else attribute(G.losYd,true);
     G.score.you+=6; sfx.td();
-    if(G.ot){ // sudden death: the six wins it, skip the formality
-      queueBanner(['TOUCHDOWN','SKULLCRUSHERS WIN IT!','+6'],()=>endOfYourDrive());
+    if(G.ot||G.suddenDeath){ // the six wins it, skip the formality
+      queueBanner(['TOUCHDOWN',G.suddenDeath?'BALLGAME. WALK-OFF.':'SKULLCRUSHERS WIN IT!','+6'],()=>endOfYourDrive());
       return;
     }
     queueBanner([wasReturn?'RETURN TOUCHDOWN!!':'TOUCHDOWN',tdQuip(),'+6'],
@@ -1119,6 +1119,7 @@ function modeFromSim(){
   }
 }
 function endOfYourDrive(){
+  if(G.suddenDeath){ finishGame(); return; } // one drive was the whole game
   if(G.ot){ finishGame(); return; }
   if(G.lastChance){ // the last chance is spent, however it went
     G.lastChance=false;
@@ -2117,16 +2118,22 @@ function drawPlaycall(){
 
 /* ---------------- tournament: the VHH Invitational ---------------- */
 const ROUND_NAMES=['QUARTERFINALS','SEMIFINALS','THE CHAMPIONSHIP'];
-function startTournament(){
+function startTournament(accel){
   const opps=TEAMS.slice().sort(()=>Math.random()-0.5);
-  G.tour={round:0,lastResults:null,stats:{},
+  G.tour={round:0,lastResults:null,stats:{},accel:!!accel,
     matches:[[TEAM_YOU,opps[0]],[opps[1],opps[2]],[opps[3],opps[4]],[opps[5],opps[6]]]};
   setState('bracket');
 }
 function startTourGame(){
   const m=G.tour.matches.find(mm=>mm[0]===TEAM_YOU||mm[1]===TEAM_YOU);
   setOpponent(m[0]===TEAM_YOU?m[1]:m[0]);
-  resetGame(); startYourDrive();
+  resetGame();
+  if(G.tour.accel){ // BLITZ: down 7-3, 1:30, one drive, touchdown or go home
+    G.suddenDeath=true;
+    G.score={you:3,cpu:7}; G._ly=3; G._lc=7;
+    G.quarter=4; G.clock=90; G.clockRunning=false;
+    queueBanner(['SUDDEN DEATH','DOWN 7–3 — 1:30 LEFT','TOUCHDOWN OR GO HOME'],()=>setupReturn('kick'));
+  } else startYourDrive();
 }
 function advanceTournament(){ // you won — settle the rest of the round
   const T=G.tour, winners=[], res=[];
@@ -2163,7 +2170,7 @@ function resetGame(){
   G.convChoice=false;G.conversion=false;G.kick=null;G.rampage=0;
   G._ly=0;G._lc=0;G.fdDraw=undefined;G.halftimeDone=false;G.lastChance=false;
   G.kickChoice=false;G.simBoost=false;G.timeouts=3;G.clockRunning=false;
-  G.gstats={};G.playCtx=null;
+  G.gstats={};G.playCtx=null;G.suddenDeath=false;
 }
 // patch original onButton to handle playcall ids defined later
 const _origOnButton=onButton;
@@ -2172,7 +2179,8 @@ onButton=function(id){
   if(G.state==='mode'){
     sfx.ui();
     if(id==='mode_quick'){ G.tour=null; setOpponent(TEAMS[0]); resetGame(); startYourDrive(); }
-    if(id==='mode_tourney'){ startTournament(); }
+    if(id==='mode_tourney'){ startTournament(false); }
+    if(id==='mode_blitz'){ startTournament(true); }
     return;
   }
   if(G.state==='playcall'){
@@ -2415,6 +2423,7 @@ function frame(now){
       if(buttons.length===0){
         buttons.push({id:'mode_quick',rect:true,x:40,y:H*0.40,w:W-80,h:88,label:'QUICK GAME',sub:'THE CLASSIC GRUDGE: VS THE BRUISERS'});
         buttons.push({id:'mode_tourney',rect:true,x:40,y:H*0.40+104,w:W-80,h:88,label:'TOURNAMENT',sub:'THE 1994 INVITATIONAL: 8 TEAMS, 1 CROWN'});
+        buttons.push({id:'mode_blitz',rect:true,x:40,y:H*0.40+208,w:W-80,h:88,label:'BLITZ TOURNAMENT',sub:'SUDDEN DEATH. DOWN 7–3. TD OR GO HOME.'});
       }
       ctx.fillStyle='#0b0b1c';ctx.fillRect(0,0,W,H);
       pixelText('CHOOSE YOUR VIOLENCE',W/2,H*0.22,30,'#fff200','#000',true);
@@ -2425,6 +2434,7 @@ function frame(now){
       ctx.fillStyle='#0b0b1c';ctx.fillRect(0,0,W,H);
       pixelText('THE VHH INVITATIONAL',W/2,70,26,'#fff200','#000',true);
       pixelText(ROUND_NAMES[T.round],W/2,108,22,'#fff','#000',true);
+      if(T.accel) pixelText('BLITZ FORMAT: ONE DRIVE. TD OR GO HOME.',W/2,134,14,'#ff8080',null,true);
       let y=170;
       for(const m of T.matches){
         const mine=m[0]===TEAM_YOU||m[1]===TEAM_YOU;
