@@ -56,13 +56,13 @@ const TEAM_YOU={city:'SMASHVILLE',name:'SKULLCRUSHERS',abbr:'SKL',
   jersey:'#00b8a6',jersey2:'#007d72',helmet:'#101418',stripe:'#00e5cf',skin:'#e8b88a'};
 // the league, est. 1994. pow = how scary their offense is (0..1)
 const TEAMS=[
-  {city:'BONE COUNTY',name:'BRUISERS',abbr:'BRU',jersey:'#7a2fbf',jersey2:'#54208a',helmet:'#ff7a00',stripe:'#ffffff',skin:'#c98c5f',ez:'#4a1d7a',ezTxt:'#ff7a00',pow:0.55},
-  {city:'RUSTBELT',name:'WRECKERS',abbr:'WRK',jersey:'#b85c00',jersey2:'#7a3d00',helmet:'#444a52',stripe:'#ffb700',skin:'#e8b88a',ez:'#5a2e00',ezTxt:'#ffb700',pow:0.45},
-  {city:'TURBO CITY',name:'THUNDERHAWKS',abbr:'THK',jersey:'#e6c800',jersey2:'#9a8600',helmet:'#101418',stripe:'#e6c800',skin:'#c98c5f',ez:'#6b5d00',ezTxt:'#fff05a',pow:0.6},
-  {city:'NEON BAY',name:'NIGHTMARES',abbr:'NGT',jersey:'#ff2fa0',jersey2:'#a91467',helmet:'#0a0a14',stripe:'#00e5ff',skin:'#e8b88a',ez:'#7a0e4c',ezTxt:'#00e5ff',pow:0.65},
-  {city:'GRAVEL PIT',name:'GRINDERS',abbr:'GRN',jersey:'#8a8f98',jersey2:'#5a5f66',helmet:'#c0392b',stripe:'#ffffff',skin:'#c98c5f',ez:'#4a4e54',ezTxt:'#ff6b5a',pow:0.5},
-  {city:'CAPITAL CITY',name:'PUNISHERS',abbr:'PUN',jersey:'#c0392b',jersey2:'#7e241b',helmet:'#101418',stripe:'#c0392b',skin:'#e8b88a',ez:'#5e1a12',ezTxt:'#ff8a7a',pow:0.7},
-  {city:'MULLET FALLS',name:'MAYHEM',abbr:'MAY',jersey:'#1f6fd6',jersey2:'#144a8f',helmet:'#e8d9b0',stripe:'#1f6fd6',skin:'#c98c5f',ez:'#123a6e',ezTxt:'#ffd700',pow:0.5},
+  {city:'BONE COUNTY',name:'BRUISERS',abbr:'BRU',jersey:'#7a2fbf',jersey2:'#54208a',helmet:'#ff7a00',stripe:'#ffffff',skin:'#c98c5f',ez:'#4a1d7a',ezTxt:'#ff7a00',pow:0.55,star:'CHAD GRISTLE'},
+  {city:'RUSTBELT',name:'WRECKERS',abbr:'WRK',jersey:'#b85c00',jersey2:'#7a3d00',helmet:'#444a52',stripe:'#ffb700',skin:'#e8b88a',ez:'#5a2e00',ezTxt:'#ffb700',pow:0.45,star:'BORIS CLAMP'},
+  {city:'TURBO CITY',name:'THUNDERHAWKS',abbr:'THK',jersey:'#e6c800',jersey2:'#9a8600',helmet:'#101418',stripe:'#e6c800',skin:'#c98c5f',ez:'#6b5d00',ezTxt:'#fff05a',pow:0.6,star:'DALE RUCKUS'},
+  {city:'NEON BAY',name:'NIGHTMARES',abbr:'NGT',jersey:'#ff2fa0',jersey2:'#a91467',helmet:'#0a0a14',stripe:'#00e5ff',skin:'#e8b88a',ez:'#7a0e4c',ezTxt:'#00e5ff',pow:0.65,star:'MAXIMUM DENNIS'},
+  {city:'GRAVEL PIT',name:'GRINDERS',abbr:'GRN',jersey:'#8a8f98',jersey2:'#5a5f66',helmet:'#c0392b',stripe:'#ffffff',skin:'#c98c5f',ez:'#4a4e54',ezTxt:'#ff6b5a',pow:0.5,star:'THE REVEREND'},
+  {city:'CAPITAL CITY',name:'PUNISHERS',abbr:'PUN',jersey:'#c0392b',jersey2:'#7e241b',helmet:'#101418',stripe:'#c0392b',skin:'#e8b88a',ez:'#5e1a12',ezTxt:'#ff8a7a',pow:0.7,star:'GRAVY JONES'},
+  {city:'MULLET FALLS',name:'MAYHEM',abbr:'MAY',jersey:'#1f6fd6',jersey2:'#144a8f',helmet:'#e8d9b0',stripe:'#1f6fd6',skin:'#c98c5f',ez:'#123a6e',ezTxt:'#ffd700',pow:0.5,star:'LIL’ CONCRETE'},
 ];
 let TEAM_CPU=TEAMS[0]; // the classic grudge, until the tournament says otherwise
 function setOpponent(t){ TEAM_CPU=t; fieldCv=null; } // repaint their endzone
@@ -694,6 +694,21 @@ function drawBigGuy(x,y,team,pose,flip,helmetOn,rot){
     px(J,6,-8,3,6); px(J,2,-9,3,6);
     if(helmetOn){ px(HM,8,-2,8,7); px(ST,8,1,8,2); }
     else { px(SK,8,-2,8,7); px('#3a2a18',14,-2,2,7); }
+  } else if(pose==='kneel'){ // one knee down (holders, the defeated)
+    px('#ddd',-3,8,3,6); px('#ddd',2,11,5,3);            // standing leg + folded leg
+    px('#222',-4,13,4,2); px('#222',6,12,3,2);
+    px(J,-5,-1,10,10); px(J2,-5,-1,10,3);
+    px(J,-7,3,3,5); px(SK,-7,7,3,3);                      // arm down to the spot
+    if(helmetOn){ px(HM,-4,-9,8,8); px(ST,-1,-9,2,8); px('#bbb',3,-5,3,2); }
+    else { px(SK,-4,-9,8,8); }
+  } else if(pose==='celebrate'){ // both arms to the heavens
+    const k2=Math.sin(performance.now()/110);
+    px('#ddd',-3,8,3,8); px('#ddd',1,8,3,8);
+    px('#222',-4,15,4,2); px('#222',1,15,4,2);
+    px(J,-5,-2,10,10); px(J2,-5,-2,10,3);
+    px(J,-8,-9+k2,3,8); px(J,5,-9-k2,3,8);                // arms UP
+    px(SK,-8,-11+k2,3,2); px(SK,5,-11-k2,3,2);
+    if(helmetOn){ px(HM,-4,-10,8,8); px(ST,-1,-10,2,8); px('#bbb',3,-6,3,2); }
   }
   ctx.restore();
 }
@@ -1042,6 +1057,7 @@ function afterPlay(){
   }
   const gain=G.losYd-spotYd;
   recordGain(gain);
+  G.drivePlays=(G.drivePlays||0)+1; if(!o.noAdvance) G.driveYds=(G.driveYds||0)+Math.round(gain);
   if(!o.noAdvance&&!o.sack) attribute(gain,false); // sacks aren't rushing yards, ask any QB
   if(!o.noAdvance){
     G.losYd=spotYd;
@@ -1062,6 +1078,11 @@ function afterPlay(){
   // incompletions, OOB, scores, turnovers: it stops.
   G.clockRunning=!!o.runoff;
   if(G.clock<=0){ G.clockRunning=false; handleClockExpiry(); return; }
+  if(G.warn30Pending){ // a VHH original: the league mandates one free moment of dread
+    G.warn30Pending=false; G.warn30Used=true; G.clockRunning=false;
+    queueBanner(['THIRTY SECOND WARNING','START SWEATING'],()=>setState('playcall'));
+    return;
+  }
   setState('playcall');
 }
 // real football: a quarter ending mid-drive just rolls over — you KEEP the ball.
@@ -1089,6 +1110,7 @@ function startYourDrive(mode){
   mode=mode||'kickoff';
   G.clock=180; G.clockRunning=false; // 3:00 of REAL time — it runs while you dawdle in the huddle
   G.fdDraw=undefined;
+  G.drivePlays=0; G.driveYds=0; G.driveVhh=G.vhhCount;
   const q='Q'+G.quarter+(G.ot?' — OVERTIME':'')+' — YOUR POSSESSION';
   const stakes=G.quarter>=4?'MAKE IT COUNT. NO REFUNDS.':'MAKE IT COUNT';
   const go=()=>{
@@ -1166,7 +1188,8 @@ function startSimDrive(){
     else if(roll<fgP+0.14){outcome='stuffed';}
     else {outcome='punt';}
   }
-  G.sim={t:0,step:0,outcome,pts,lines:[pick(SIM_FLAVOR),pick(SIM_FLAVOR)]};
+  G.sim={t:0,step:0,outcome,pts,lines:[pick(SIM_FLAVOR),
+    Math.random()<0.5?TEAM_CPU.star+(outcome==='td'?' SMELLS BLOOD...':' DROPS BACK...'):pick(SIM_FLAVOR)]};
   if(desperate) G.sim.lines[0]='YOUR DEFENSE IS PLAYING ANGRY...';
   // Q4/OT: you get ONE shot to blow the play up yourself
   G.sim.qte=(G.quarter>=4)?{pos:0,dir:1,done:false,hit:false}:null;
@@ -1246,7 +1269,9 @@ function resolveKick(){
   // FG/XP: same view, your tap becomes the flight
   const good=offCenter<=k.window;
   const doink=!good&&offCenter<=k.window*1.22; // juuust missed the window: post city
-  G.kickAnim={t:0,type:k.type,distYds:k.distYds,good,doink,
+  // bad enough misses (or a snap held too long) come out low — and the edge rusher is RIGHT THERE
+  const blocked=!good&&!doink&&(k.timedOut||offCenter>k.window*1.9)&&Math.random()<0.6;
+  G.kickAnim={t:0,type:k.type,distYds:k.distYds,good,doink,blocked,
     side:Math.sign(k.pos-0.5)||1,offCenter,window:k.window};
   setState('kickanim');
 }
@@ -1274,19 +1299,38 @@ function drawRef(x,y,s,pose,t){
   ctx.restore();
 }
 // the shared field-level backdrop: behind the kicker, facing the uprights
-function drawKickScene(type,distYds){
+// fx: {hush:0..1, jump:0|1|2 (crowd leaping phases), net:0..1, netWobbleT}
+function drawKickScene(type,distYds,fx){
+  fx=fx||{};
   ctx.fillStyle='#0b0b1c'; ctx.fillRect(0,0,W,H); // night sky
   if(!G.kickCrowd){ G.kickCrowd=[];
     for(let i=0;i<420;i++) G.kickCrowd.push({x:Math.random()*W,y:60+Math.random()*238,
       c:pick(['#3a3a4e','#54465c','#4e5a46','#5c4646','#46505c','#6b6b7a'])});
   }
-  for(const cd of G.kickCrowd){ ctx.fillStyle=cd.c; ctx.fillRect(cd.x,cd.y,4,4); }
+  for(let i=0;i<G.kickCrowd.length;i++){
+    const cd=G.kickCrowd[i];
+    let oy=0;
+    if(fx.jump){ oy=((i%2)===(fx.jump-1))?-4:0; } // the stands LEAP
+    ctx.fillStyle=cd.c; ctx.fillRect(cd.x,cd.y+oy,4,4);
+  }
+  if(fx.hush){ ctx.fillStyle='rgba(0,0,0,'+(0.30*fx.hush).toFixed(3)+')'; ctx.fillRect(0,56,W,246); } // breath held
   ctx.fillStyle='#0a0a12'; ctx.fillRect(0,300,W,14); // stadium wall
   ctx.fillStyle='#1c7a2e'; ctx.fillRect(0,314,W,H-314); // the field, receding
   ctx.fillStyle='rgba(0,0,0,0.08)';
   for(let y=314;y<H;y+=56) ctx.fillRect(0,y,W,28); // mow bands for depth
   ctx.fillStyle='rgba(255,255,255,0.5)'; ctx.fillRect(0,520,W,3); // the goal line, way out there
   if(type!=='punt'){ // goalposts facing us: uprights at x 130/342, crossbar y~392
+    // the net rises behind the posts, like it knows
+    if(fx.net>0){
+      const top=392-(392-182)*Math.min(1,fx.net);
+      ctx.fillStyle='#777'; ctx.fillRect(134,top-4,4,392-top+4); ctx.fillRect(342,top-4,4,392-top+4);
+      ctx.strokeStyle='rgba(255,255,255,0.16)'; ctx.lineWidth=1;
+      for(let x=138;x<=342;x+=24){
+        const wob=fx.netWobbleT>0?Math.sin(fx.netWobbleT*22+x*0.3)*3*Math.min(1,fx.netWobbleT):0;
+        ctx.beginPath(); ctx.moveTo(x+wob,top); ctx.lineTo(x,392); ctx.stroke();
+      }
+      for(let y=top;y<392;y+=30){ ctx.beginPath(); ctx.moveTo(138,y); ctx.lineTo(342,y); ctx.stroke(); }
+    }
     ctx.fillStyle='#ffd700';
     ctx.fillRect(236,400,8,74);
     ctx.fillRect(130,392,220,8);
@@ -1304,10 +1348,12 @@ function finishKick(){
   if(a.type==='xp'){
     stat(ROSTER.K,'xpa',1); if(a.good) stat(ROSTER.K,'xpm',1);
     if(a.good){ G.score.you+=1; queueBanner(['EXTRA POINT','GOOD. AS EXPECTED.','+1'],()=>afterScoreFlow()); }
+    else if(a.blocked) queueBanner(['THE XP IS BLOCKED?!','TODD AGAIN. UNBELIEVABLE.','NO GOOD'],()=>afterScoreFlow());
     else queueBanner(['THE EXTRA POINT...','HE MISSED THE AUTOMATIC ONE.','GROUNDS FOR DIVORCE'],()=>afterScoreFlow());
   } else {
     stat(ROSTER.K,'fga',1); if(a.good) stat(ROSTER.K,'fgm',1);
     if(a.good){ G.score.you+=3; queueBanner([a.distYds+' YD FIELD GOAL','IS GOOD!','+3'],()=>afterScoreFlow()); }
+    else if(a.blocked) queueBanner(['THE KICK IS BLOCKED!!','SOME GUY NAMED TODD ATE IT WITH HIS FACE','NO GOOD'],()=>endOfYourDrive());
     else queueBanner([a.distYds+' YD FIELD GOAL',
       a.doink?'OFF THE POST. THE POST WINS.':pick(['NO GOOD.','SHANKED INTO THE PARKING LOT!','HE HIT THE MASCOT. THE MASCOT IS DOWN.'])],
       ()=>endOfYourDrive());
@@ -1346,6 +1392,7 @@ function updateLive(dt){
   G.clock=Math.max(0,G.clock-dt); // real time, one second per second
   if(G.quarter>=4&&G.clock<15&&G.clock>0&&Math.ceil(G.clock)!==Math.ceil(preClock))
     tone(1100,0.05,'square',0.08); // final-seconds dread tick
+  if(G.quarter>=4&&!G.warn30Used&&preClock>30&&G.clock<=30) G.warn30Pending=true; // the thirty-second warning
   G.stumbleT=Math.max(0,(G.stumbleT||0)-dt);
   G.rampage=Math.max(0,(G.rampage||0)-dt);
   // past the line and still up: the defense eventually sends everyone
@@ -1715,7 +1762,21 @@ function drawField(camY){
     G.fdDraw=lerp(G.fdDraw,G.firstYd,0.16);
     const fy=yd2y(G.fdDraw)-camY;
     ctx.fillStyle='rgba(255,242,0,0.85)'; ctx.fillRect(FX0,fy-1,FX1-FX0,2);
+    // the chain gang: orange vests, thankless work
+    drawChainGuy(FX0-11,fy,null);
+    drawChainGuy(FX0-11,ly,G.down);
   }
+}
+function drawChainGuy(x,sy,downNum){
+  if(sy<60||sy>H-20) return;
+  ctx.fillStyle='#222'; ctx.fillRect(x-2,sy-16,2,18);        // the pole
+  ctx.fillStyle='#ff7a00'; ctx.fillRect(x-5,sy-6,7,7);       // vest
+  ctx.fillStyle='#e8b88a'; ctx.fillRect(x-4,sy-10,5,4);      // head
+  if(downNum){ // the flip card
+    ctx.fillStyle='#111'; ctx.fillRect(x-8,sy-26,12,11);
+    ctx.fillStyle='#fff200';
+    pixelText(''+downNum,x-2,sy-20,10,'#fff200',null,true);
+  } else { ctx.fillStyle='#fff200'; ctx.fillRect(x-5,sy-22,8,5); } // the chain top
 }
 function drawBallFlight(camY){
   if(G.kickFlight){
@@ -2098,6 +2159,8 @@ function setupPlaycallButtons(){
   }
   if(!G.convChoice&&!G.kickChoice&&G.clockRunning&&G.timeouts>0)
     defs.push({id:'play_to',label:'TIMEOUT ('+G.timeouts+' LEFT)',sub:'STOP THE CLOCK'});
+  if(!G.convChoice&&!G.kickChoice&&(G.quarter>=4||G.ot)&&G.score.you>G.score.cpu&&G.clockRunning&&G.clock<25)
+    defs.push({id:'play_kneel',label:'VICTORY FORMATION',sub:'TAKE A KNEE. TELL HIM ABOUT IT FOREVER.'});
   const bh=74,gap=12;
   let y=H-(bh+gap)*defs.length-24;
   for(const d of defs){
@@ -2168,6 +2231,7 @@ function resetGame(){
   G._ly=0;G._lc=0;G.fdDraw=undefined;G.halftimeDone=false;G.lastChance=false;
   G.kickChoice=false;G.simBoost=false;G.timeouts=3;G.clockRunning=false;
   G.gstats={};G.playCtx=null;G.suddenDeath=false;
+  G.warn30Used=false;G.warn30Pending=false;G.drivePlays=0;G.driveYds=0;G.driveVhh=0;
 }
 // patch original onButton to handle playcall ids defined later
 const _origOnButton=onButton;
@@ -2182,6 +2246,11 @@ onButton=function(id){
   }
   if(G.state==='playcall'){
     sfx.ui();
+    if(id==='play_kneel'){
+      queueBanner(['DIRK THUNDER TAKES A KNEE','THE MOST DISRESPECTFUL PLAY IN SPORTS','GOOD NIGHT, '+TEAM_CPU.city],
+        ()=>{ G.clock=0; G.clockRunning=false; handleClockExpiry(); });
+      return;
+    }
     if(id==='play_to'){
       if(G.timeouts>0&&G.clockRunning){
         G.timeouts--; G.clockRunning=false;
@@ -2309,6 +2378,9 @@ function frame(now){
       drawField(G.camY); drawHUD(); drawFxScreen();
       ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(0,H*0.25,W,H*0.42);
       pixelText(TEAM_CPU.name+' BALL...',W/2,H*0.31,26,'#b06aff','#000',true);
+      if(G.drivePlays) // your drive's broadcast epitaph
+        pixelText('YOUR DRIVE: '+G.drivePlays+' PLAYS, '+G.driveYds+' YDS, '+(G.vhhCount-(G.driveVhh||0))+' FELONIES',
+          W/2,H*0.27,13,'#888',null,true);
       if(s.t>0.8)pixelText(s.lines[0],W/2,H*0.40,18,'#ccc',null,true);
       if(s.t>1.7)pixelText(s.lines[1],W/2,H*0.46,18,'#ccc',null,true);
       if(s.t>1.0&&!s.c1){s.c1=true;sfx.thud();}
@@ -2340,81 +2412,183 @@ function frame(now){
       }
       if(s.t>4.2){ G.lastSimOutcome=s.outcome; G.sim=null; endQuarter(); }
       break; }
-    case 'kickmeter': { // aiming happens INSIDE the field-level view
+    case 'kickmeter': { // the operation: snap, hold, laces out — THEN you aim
       const k=G.kick;
       k.t+=dt;
-      k.pos+=k.dir*dt*1.4;
-      if(k.pos>1){k.pos=1;k.dir=-1;} if(k.pos<0){k.pos=0;k.dir=1;}
-      drawKickScene(k.type,k.distYds);
-      if(k.type!=='punt'){ drawRef(108,545,2.2,'idle'); drawRef(372,545,2.2,'idle'); }
-      // kicker set and waiting, ball on the tee
-      drawBigGuy(150,610,TEAM_YOU,'brace',false,true);
-      ctx.fillStyle='#8a4b1f'; ctx.fillRect(235,586,10,14);
-      ctx.fillStyle='#fff'; ctx.fillRect(239,590,2,6);
-      // the meter, on the turf in front of you
-      pixelText('TAP TO KICK!',W/2,668,20,'#fff','#000',true);
-      const bx=W*0.12,bw=W*0.76,by=700;
-      ctx.fillStyle='rgba(0,0,0,0.45)';ctx.fillRect(bx-8,by-10,bw+16,40);
-      ctx.fillStyle='rgba(255,255,255,0.2)';ctx.fillRect(bx,by,bw,20);
-      const win=k.type==='punt'?0.5:k.window;
-      ctx.fillStyle='rgba(125,255,106,0.5)';
-      ctx.fillRect(bx+bw*(0.5-win/2),by,bw*win,20);
-      ctx.fillStyle='#fff';ctx.fillRect(bx+bw*k.pos-2,by-5,4,30);
+      const isPunt=k.type==='punt';
+      if(k.bobble===undefined){ // 3% of XPs: the snap is high. everyone be cool.
+        k.bobble=(k.type==='xp'&&Math.random()<0.03);
+        k.needleStart=isPunt?0.2:(k.bobble?1.15:0.5);
+      }
+      if(k.t>k.needleStart){
+        k.pos+=k.dir*dt*1.4;
+        if(k.pos>1){k.pos=1;k.dir=-1;} if(k.pos<0){k.pos=0;k.dir=1;}
+      }
+      const hush=clamp((k.t-k.needleStart)/1.5,0,1);
+      drawKickScene(k.type,k.distYds,{hush:isPunt?0:hush,net:isPunt?0:clamp(k.t/0.7,0,1)});
+      // crowd murmur dies as the moment arrives
+      if(!isPunt){ k.murT=(k.murT||0)-dt; if(k.murT<=0){ k.murT=0.4; noise(0.45,0.10*(1-hush)+0.01,1200); } }
+      if(!isPunt){ drawRef(108,545,2.2,'idle'); drawRef(372,545,2.2,'idle'); }
+      // the operation
+      drawBigGuy(150,610,TEAM_YOU,'brace',false,true); // Igor, waiting on the foot
+      if(!isPunt){
+        drawBigGuy(240,556,TEAM_YOU,'kneel',false,true);     // long snapper, hunched over his work
+        drawBigGuy(258,598,TEAM_YOU,'kneel',true,true);      // the holder
+        // the ball: snap -> catch -> placed -> (maybe bobbled) -> teed
+        let bx2=240,by2=552,spin=0;
+        if(k.t<0.15){ bx2=240; by2=552; if(!k.hiked){k.hiked=true;sfx.hike();} }
+        else if(k.t<0.33){ const sk=(k.t-0.15)/0.18; bx2=lerp(240,247,sk); by2=lerp(552,590,sk)+Math.sin(sk*9)*2; spin=k.t*18; }
+        else if(k.t<0.45){ if(!k.caught){k.caught=true;sfx.catchFx();} const pk=(k.t-0.33)/0.12; bx2=lerp(247,240,pk); by2=lerp(590,593,pk); }
+        else { bx2=240; by2=593;
+          if(k.bobble&&k.t<1.15){ by2=593-Math.abs(Math.sin((k.t-0.45)*9))*12; spin=k.t*10;
+            pixelText(k.t<0.8?'THE SNAP IS HIGH—':'...HE GOT IT DOWN. EVERYONE BE COOL.',W/2,560,15,'#ff9f50','#000',true);
+          }
+        }
+        ctx.save(); ctx.translate(bx2,by2-7); ctx.rotate(spin);
+        ctx.fillStyle='#8a4b1f'; ctx.fillRect(-5,-7,10,14);
+        ctx.fillStyle='#fff'; ctx.fillRect(-1,-3+(k.t>0.45?Math.sin(k.t*20)*0:0),2,6); // laces out
+        ctx.restore();
+      } else {
+        ctx.fillStyle='#8a4b1f'; ctx.fillRect(235,586,10,14);
+        ctx.fillStyle='#fff'; ctx.fillRect(239,590,2,6);
+      }
+      // Igor's day so far, for the gamblers
+      if(!isPunt){
+        const ks=(G.gstats&&G.gstats[ROSTER.K.name])||{};
+        pixelText('IGOR THE FOOT — TODAY: '+(ks.fgm||0)+'/'+(ks.fga||0)+' FG, '+(ks.xpm||0)+'/'+(ks.xpa||0)+' XP',W/2,645,13,'#9fd8ff',null,true);
+      }
+      // the meter appears once the ball is down
+      if(k.t>k.needleStart-0.05){
+        pixelText('TAP TO KICK!',W/2,668,20,'#fff','#000',true);
+        const bx=W*0.12,bw=W*0.76,by=700;
+        ctx.fillStyle='rgba(0,0,0,0.45)';ctx.fillRect(bx-8,by-10,bw+16,40);
+        ctx.fillStyle='rgba(255,255,255,0.2)';ctx.fillRect(bx,by,bw,20);
+        const win=isPunt?0.5:k.window;
+        ctx.fillStyle='rgba(125,255,106,0.5)';
+        ctx.fillRect(bx+bw*(0.5-win/2),by,bw*win,20);
+        ctx.fillStyle='#fff';ctx.fillRect(bx+bw*k.pos-2,by-5,4,30);
+      }
       drawHUD(); drawFxScreen();
-      if(tapped||k.t>4.2) resolveKick(); // hesitate forever and the snap gets away from you
+      if((tapped&&k.t>k.needleStart)||k.t>k.needleStart+3.7){
+        if(k.t>k.needleStart+3.69) k.timedOut=true; // held it too long; the operation breaks down
+        resolveKick();
+      }
       break; }
-    case 'kickanim': { // ...and the same view continues: YOUR tap becomes the flight
+    case 'kickanim': { // the verdict: rusher off the edge, ball in the air, refs decide
       const a=G.kickAnim; a.t+=dt;
-      drawKickScene(a.type,a.distYds);
       const RUN=0.55, teeX=240, teeY=600;
+      const isPunt=a.type==='punt';
+      if(a.lunatic===undefined) a.lunatic=!a.blocked&&Math.random()<0.15;
+      // crowd: held breath until the verdict, then leaping or funereal
+      let jump=0;
+      if(a.resolved&&a.good&&!isPunt&&a.t<a.resolvedAt+1.2) jump=1+(Math.floor(frameCount/6)%2);
+      drawKickScene(a.type,a.distYds,{
+        hush:isPunt?0:(a.resolved?(a.good?0:1):1),
+        net:isPunt?0:1,
+        jump,
+        netWobbleT:a.netWobbleT||0
+      });
+      if(a.netWobbleT) a.netWobbleT=Math.max(0,a.netWobbleT-0); // advanced below when set
+      if(!isPunt){
+        drawBigGuy(240,556,TEAM_YOU,'kneel',false,true); // snapper, job done, praying
+        drawBigGuy(258,598,TEAM_YOU,'kneel',true,true);  // holder, frozen
+        // THE EDGE RUSHER — every kick is survived, some are not
+        if(a.t<RUN){
+          drawBigGuy(-30+a.t*340,596,TEAM_CPU,'run',false,true);
+        } else if(a.blocked){
+          const lk=clamp((a.t-RUN)/0.12,0,1); // he gets there
+          ctx.save();ctx.translate(lerp(157,228,lk),lerp(590,552,lk));ctx.rotate(-0.5);
+          drawBigGuy(0,0,TEAM_CPU,'missile',false,true);ctx.restore();
+          if(a.t>RUN+0.5) drawBigGuy(250,580,TEAM_CPU,'celebrate',false,true); // Todd is thrilled
+        } else if(a.t<RUN+0.22){
+          const lk=(a.t-RUN)/0.22;
+          ctx.save();ctx.translate(lerp(157,272,lk),585-Math.sin(lk*Math.PI)*18);ctx.rotate(lk*1.2);
+          drawBigGuy(0,0,TEAM_CPU,'missile',false,true);ctx.restore();
+        } else {
+          if(!a.rusherDown){a.rusherDown=true;spawnDust(285,592);}
+          ctx.save();ctx.translate(285,592);ctx.rotate(Math.PI/2);drawBigGuy(0,0,TEAM_CPU,'brace',false,true);ctx.restore();
+          if(a.lunatic&&a.t<RUN+1.5) pixelText('IGOR KICKS IT OVER A LUNATIC',W/2,630,13,'#9fd8ff','#000',true);
+        }
+      }
       if(a.t<RUN){ // the approach
         drawBigGuy(150+(a.t/RUN)*74,610,TEAM_YOU,'run',false,true);
         ctx.fillStyle='#8a4b1f'; ctx.fillRect(teeX-5,teeY-14,10,14);
         ctx.fillStyle='#fff'; ctx.fillRect(teeX-1,teeY-10,2,6);
       } else {
         if(!a.kicked){ a.kicked=true; sfx.thud(); noise(0.35,0.15,2800); spawnDust(teeX,teeY); }
-        drawBigGuy(226,608,TEAM_YOU,'brace',false,true); // follow-through
+        // Igor: follow-through, then body language
+        if(!a.resolved||a.t<RUN+1.0){
+          drawBigGuy(226,608,TEAM_YOU,'brace',false,true);
+        } else if(a.good){
+          drawBigGuy(226,608-Math.abs(Math.sin(a.t*8))*6,TEAM_YOU,'celebrate',false,true);
+          pixelText('IGOR POINTS AT THE FOOT. THE FOOT ACCEPTS.',W/2,660,13,'#7dff6a','#000',true);
+        } else if(a.doink&&a.t<RUN+1.5){
+          drawBigGuy(226+Math.sin(a.t*40)*3,608,TEAM_YOU,'brace',false,true); // cannot watch
+        } else {
+          drawBigGuy(226,612,TEAM_YOU,'kneel',false,true);
+          pixelText('THE FOOT HAS BEEN LIED TO.',W/2,660,13,'#ff8080','#000',true);
+        }
         const k=Math.min((a.t-RUN)/1.0,1.0);
         // lateral drift: inside the posts, off the post, or wide — per your tap
-        const spread=a.type==='punt'?(10+a.offCenter*50)
+        const spread=isPunt?(10+a.offCenter*50)
                     :a.good?(a.offCenter/Math.max(a.window,0.01))*80
                     :(a.doink?106:135+Math.min(85,(a.offCenter-a.window)*220));
-        let bx=lerp(teeX,240+a.side*spread,k);
-        let by=a.type==='punt'
-          ? teeY-14-620*k+90*k*k       // punts climb higher and just keep going
-          : teeY-14-500*k+150*k*k;     // FG/XP: up and away at the posts
-        let scale=1-0.55*k;            // shrinking with distance
-        if(a.doink&&k>=1){ // CLANG. the post wins.
-          const pb=a.t-RUN-1.0;
-          bx=240+a.side*106; by=236+pb*260; scale=0.45+pb*0.15;
-        } else if(k>=1){ // sails on
-          const pb=a.t-RUN-1.0;
-          bx+=a.side*(a.good?8:46)*pb;
-          by=(a.type==='punt'?56:236)-pb*(a.type==='punt'?220:36);
-          scale=Math.max(0.22,0.45-pb*0.1);
+        let bx,by,scale,rot=(a.t-RUN)*12;
+        if(a.blocked){ // it never had a chance
+          if(a.t<RUN+0.10){ const bk=(a.t-RUN)/0.10; bx=lerp(teeX,241,bk); by=lerp(teeY-14,545,bk); scale=1-0.1*bk; }
+          else {
+            if(!a.resolved){ a.resolved=true; a.resolvedAt=a.t;
+              sfx.megacrunch(); shake=12; zoomPunch=0.07;
+              bigText('BLOCKED!!',{size:40,color:'#ff5050',dur:1.4});
+            }
+            const pb=a.t-RUN-0.10;
+            bx=241-260*pb; by=545+200*pb-(pb>0.47?0:0); rot=(a.t-RUN)*22; scale=0.9;
+            if(by>640){ by=640-(by-640)*0.45; } // one sad bounce
+          }
+        } else {
+          bx=lerp(teeX,240+a.side*spread,k);
+          by=isPunt? teeY-14-620*k+90*k*k : teeY-14-500*k+150*k*k;
+          scale=1-0.55*k;
+          if(a.doink&&k>=1){ // CLANG. the post wins.
+            const pb=a.t-RUN-1.0;
+            bx=240+a.side*106; by=236+pb*260; scale=0.45+pb*0.15;
+          } else if(k>=1){
+            const pb=a.t-RUN-1.0;
+            if(a.good&&!isPunt){ // it drops into the net, where good kicks live
+              bx=240+a.side*spread; by=Math.min(380,236+pb*220); scale=0.45;
+              a.netWobbleT=Math.max(0.01,0.7-pb);
+            } else {
+              bx+=a.side*(a.good?8:46)*pb;
+              by=(isPunt?56:236)-pb*(isPunt?220:36);
+              scale=Math.max(0.22,0.45-pb*0.1);
+            }
+          }
         }
-        ctx.save(); ctx.translate(bx,by); ctx.rotate((a.t-RUN)*12); ctx.scale(scale,scale);
+        ctx.save(); ctx.translate(bx,by); ctx.rotate(rot); ctx.scale(scale,scale);
         ctx.fillStyle='#8a4b1f'; ctx.fillRect(-7,-5,14,10);
         ctx.fillStyle='#fff'; ctx.fillRect(-1.5,-5,3,10);
         ctx.restore();
-        if(k>=1&&!a.resolved){
-          a.resolved=true;
-          if(a.type==='punt'){ if(a.offCenter<0.25) bigText('MOONSHOT.',{size:28,color:'#9fd8ff',dur:1.0}); }
+        if(!a.blocked&&k>=1&&!a.resolved){
+          a.resolved=true; a.resolvedAt=a.t;
+          if(isPunt){ if(a.offCenter<0.25) bigText('MOONSHOT.',{size:28,color:'#9fd8ff',dur:1.0}); }
           else if(a.good){ sfx.td(); sfx.cheer(); flashWhite=0.08; spawnStars(bx,by,10);
+            for(let i=0;i<20;i++) parts.push({kind:'bulb',x:Math.random()*W,y:rnd(60,300),t:0,dur:0.9,blinkAt:rnd(0,0.6)});
+            noise(1.4,0.35,1800,0.35); // the second wave of the eruption
             bigText('IT’S GOOD!',{size:40,color:'#7dff6a',dur:1.3}); }
           else if(a.doink){ tone(420,0.5,'square',0.3,250); tone(630,0.3,'square',0.15,380); shake=10;
             bigText('DOINK!!',{size:38,color:'#ff9f50',dur:1.3}); }
           else { sfx.fail();
+            parts.push({kind:'bulb',x:rnd(0,W),y:rnd(60,300),t:0,dur:0.5,blinkAt:0.1}); // the lone away fan
             bigText(a.side<0?'WIDE LEFT!':'WIDE RIGHT!',{size:34,color:'#ff5050',dur:1.3}); }
         }
       }
-      if(a.type!=='punt'){ // the officials, tracking it the whole way
+      if(!isPunt){ // the officials, tracking it the whole way
         const pose=!a.resolved?'idle':(a.good?'good':'no');
         drawRef(108,545,2.2,pose,a.t);
         drawRef(372,545,2.2,pose,a.t);
       }
       drawHUD(); drawFxWorld(0); drawFxScreen();
-      if(a.t>RUN+(a.type==='punt'?1.5:2.1)) finishKick();
+      if(a.t>RUN+(isPunt?1.5:(a.blocked?2.2:2.6))) finishKick();
       break; }
     case 'mode': {
       if(buttons.length===0){
