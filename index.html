@@ -79,6 +79,7 @@ const ROSTER={
 // per-game stat sheet: G.gstats[name][key]
 function stat(who,key,amt){
   if(!who) return;
+  if(!G.gstats) G.gstats={};
   const s=G.gstats[who.name]||(G.gstats[who.name]={});
   s[key]=(s[key]||0)+amt;
 }
