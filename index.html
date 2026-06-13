@@ -1953,8 +1953,8 @@ function drawIntro(dt){
     for(let y=0;y<70;y+=8)for(let x=0;x<W;x+=8) if((x*7+y*13)%5<2){ctx.fillStyle=['#444','#665','#556'][(x+y)%3];ctx.fillRect(x,gy-118+y,5,5);}
     const ts=t-8.8;
     const impactT=3.4, FREEZE=0.2; // a longer, happier jog — more song before the consequences
-    const SPD=58;                   // px/sec — a leisurely, doomed amble
-    const ix=70+SPD*impactT;        // ~267: contact lands near center, room to see it coming
+    const SPD=48;                   // px/sec — a leisurely, doomed amble
+    const ix=70+SPD*impactT;        // ~233: contact lands left of center, room to see it coming
     const cx=ix+30;                 // tackler contact position
     if(ts<impactT){
       // runner jogs right, blissfully unaware, whistling to himself
@@ -1974,10 +1974,10 @@ function drawIntro(dt){
           }
         }
       }
-      // tackler rockets in from the right — visible crossing the screen for a good beat
-      if(ts>impactT-0.85){
-        const k=(ts-(impactT-0.85))/0.85;
-        const mx=lerp(478,cx,Math.pow(k,1.5)); // enters at the edge, accelerates into him
+      // tackler rockets in from the right — enters early, then whips in HARD
+      if(ts>impactT-0.7){
+        const k=(ts-(impactT-0.7))/0.7;
+        const mx=lerp(500,cx,Math.pow(k,1.9)); // hangs at the edge, then accelerates violently
         drawBigGuy(mx,gy-6,TEAM_CPU,'missile',false,true);
       }
       // he hears something...
