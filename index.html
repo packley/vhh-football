@@ -186,6 +186,7 @@ const sfx={
   whistle(){ tone(2300,0.35,'square',0.07); tone(2800,0.35,'square',0.05); },
   hike(){ tone(220,0.08,'square',0.12); tone(180,0.08,'square',0.12,null,0.1); },
   throwFx(){ noise(0.18,0.12,3500); },
+  dive(){ noise(0.26,0.32,1500); tone(150,0.2,'sine',0.28,80); }, // a grunt and a whoosh, NOT a throw
   catchFx(){ noise(0.07,0.25,1200); tone(500,0.06,'square',0.1); },
   td(){ [392,523,659,784,1046].forEach((f,i)=>tone(f,0.22,'square',0.14,null,i*0.11)); noise(1.2,0.18,1800,0.1); },
   firstDown(){ tone(523,0.1,'square',0.12); tone(659,0.14,'square',0.12,null,0.1); },
@@ -466,11 +467,11 @@ function endPointer(e,cancel){
     const quick=performance.now()-stick.downT<280;
     if(!cancel&&quick&&d<20){
       handleLiveTap({x:stick.lastX,y:stick.lastY}); // tap = dive (when you're the runner)
-    } else if(!cancel&&quick&&d>50&&stick.preRunDir){
-      // a quick flick in the direction he's ALREADY running = lay out for it.
-      // (flicks in a new direction are steering; "more of the same" means dive)
+    } else if(!cancel&&quick&&d>72&&stick.preRunDir){
+      // a deliberate hard flick in the EXACT direction he's already running = lay out.
+      // tight cone (~18deg) + long throw so normal steering drags never trip it.
       const dot=(dx/d)*stick.preRunDir.x+(dy/d)*stick.preRunDir.y;
-      if(dot>0.86) tryDive();
+      if(dot>0.95) tryDive();
     }
     stick.active=false; stick.dx=0; stick.dy=0; // runDir persists — he keeps running
   }
@@ -944,7 +945,7 @@ function tryDive(){
   G.dive={t:0,dur:0.42,vx:vx*sp,vy:vy*sp};
   c.state='diving'; c.spinRot=Math.atan2(vy,vx)+Math.PI/2;
   G.runDir=null;
-  sfx.throwFx(); spawnDust(c.x,c.y);
+  sfx.dive(); spawnDust(c.x,c.y);
   bigText('DIVE!',{size:22,color:'#9fd8ff',dur:0.5,y:H*0.52});
 }
 function doThrow(i){
