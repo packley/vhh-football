@@ -487,6 +487,7 @@ function doJuke(dir){
   if((G.jukeCd||0)>0) return;          // a brief beat between cuts
   G.juke={dir,t:0,dur:0.26};
   G.jukeCd=0.4;
+  G.runDir={x:0,y:-1}; // square up: sidestep, then run perfectly straight again
   sfx.juke(); spawnDust(c.x,c.y);
 }
 cv.addEventListener('pointerup',endPointer);
