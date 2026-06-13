@@ -52,11 +52,11 @@ const yd2y=yd=>yd*PPY;
 const y2yd=y=>y/PPY;
 
 /* ---------------- teams ---------------- */
-const TEAM_YOU={city:'SMASHVILLE',name:'SKULLCRUSHERS',abbr:'SKL',
+const TEAM_YOU={city:'ACKLEY',name:'LAMBSNURGERS',abbr:'ACK',
   jersey:'#00b8a6',jersey2:'#007d72',helmet:'#101418',stripe:'#00e5cf',skin:'#e8b88a'};
 // the league, est. 1994. pow = how scary their offense is (0..1)
 const TEAMS=[
-  {city:'BONE COUNTY',name:'BRUISERS',abbr:'BRU',jersey:'#7a2fbf',jersey2:'#54208a',helmet:'#ff7a00',stripe:'#ffffff',skin:'#c98c5f',ez:'#4a1d7a',ezTxt:'#ff7a00',pow:0.55,star:'CHAD GRISTLE'},
+  {city:'CLEMENS',name:'HAM SCRAMBLIES',abbr:'CLE',jersey:'#7a2fbf',jersey2:'#54208a',helmet:'#ff7a00',stripe:'#ffffff',skin:'#c98c5f',ez:'#4a1d7a',ezTxt:'#ff7a00',pow:0.55,star:'CHAD GRISTLE'},
   {city:'RUSTBELT',name:'WRECKERS',abbr:'WRK',jersey:'#b85c00',jersey2:'#7a3d00',helmet:'#444a52',stripe:'#ffb700',skin:'#e8b88a',ez:'#5a2e00',ezTxt:'#ffb700',pow:0.45,star:'BORIS CLAMP'},
   {city:'TURBO CITY',name:'THUNDERHAWKS',abbr:'THK',jersey:'#e6c800',jersey2:'#9a8600',helmet:'#101418',stripe:'#e6c800',skin:'#c98c5f',ez:'#6b5d00',ezTxt:'#fff05a',pow:0.6,star:'DALE RUCKUS'},
   {city:'NEON BAY',name:'NIGHTMARES',abbr:'NGT',jersey:'#ff2fa0',jersey2:'#a91467',helmet:'#0a0a14',stripe:'#00e5ff',skin:'#e8b88a',ez:'#7a0e4c',ezTxt:'#00e5ff',pow:0.65,star:'MAXIMUM DENNIS'},
@@ -1064,7 +1064,7 @@ function afterPlay(){
     else attribute(G.losYd,true);
     G.score.you+=6; sfx.td();
     if(G.ot||G.suddenDeath){ // the six wins it, skip the formality
-      queueBanner(['TOUCHDOWN',G.suddenDeath?'BALLGAME. WALK-OFF.':'SKULLCRUSHERS WIN IT!','+6'],()=>endOfYourDrive());
+      queueBanner(['TOUCHDOWN',G.suddenDeath?'BALLGAME. WALK-OFF.':TEAM_YOU.name+' WIN IT!','+6'],()=>endOfYourDrive());
       return;
     }
     queueBanner([wasReturn?'RETURN TOUCHDOWN!!':'TOUCHDOWN',tdQuip(),'+6'],
@@ -1078,14 +1078,14 @@ function afterPlay(){
     stat(G.carrier&&G.carrier.who,'retYds',Math.round(G.losYd-s2));
     G.losYd=s2; G.down=1; G.toGo=Math.min(10,s2); G.firstYd=Math.max(0,s2-10);
     const own=s2>50;
-    queueBanner(['RETURNED TO THE',(own?'OWN ':'BRUISERS ')+Math.round(own?100-s2:s2)+' YARD LINE'],
+    queueBanner(['RETURNED TO THE',(own?'OWN ':TEAM_CPU.abbr+' ')+Math.round(own?100-s2:s2)+' YARD LINE'],
       ()=>G.clock<=0?handleClockExpiry():setState('playcall'));
     return;
   }
   const spotYd=clamp(y2yd(o.spotY!==undefined?o.spotY:G.carrier.y),0.5,109);
   if(spotYd>=100){ // brought down in your own end zone (returns exempt — handled above)
     G.score.cpu+=2; sfx.fail();
-    queueBanner(['SAFETY!','IN YOUR OWN HOUSE?!','BRUISERS +2'],()=>endOfYourDrive());
+    queueBanner(['SAFETY!','IN YOUR OWN HOUSE?!',TEAM_CPU.name+' +2'],()=>endOfYourDrive());
     return;
   }
   const gain=G.losYd-spotYd;
@@ -1429,10 +1429,10 @@ function resolveOnside(){
     sfx.cheer();
     const spot=Math.round(rnd(42,52));
     G.losYd=spot; G.down=1; G.toGo=10; G.firstYd=spot-10; G.fdDraw=undefined;
-    queueBanner(['ONSIDE KICK...','THE BALL IS LOOSE... PILE-UP!!','SKULLCRUSHERS RECOVER!!'],()=>setState('playcall'));
+    queueBanner(['ONSIDE KICK...','THE BALL IS LOOSE... PILE-UP!!',TEAM_YOU.name+' RECOVER!!'],()=>setState('playcall'));
   } else {
     G.simBoost=true; sfx.fail();
-    queueBanner(['ONSIDE KICK...','THE BALL IS LOOSE...','BRUISERS FALL ON IT. SHORT FIELD.'],()=>endOfYourDrive());
+    queueBanner(['ONSIDE KICK...','THE BALL IS LOOSE...',TEAM_CPU.name+' FALL ON IT. SHORT FIELD.'],()=>endOfYourDrive());
   }
 }
 
@@ -1768,7 +1768,7 @@ function buildField(){
     c.restore();
   };
   endzone(Y(-10),TEAM_CPU.ez||'#4a1d7a',TEAM_CPU.name,TEAM_CPU.ezTxt||'#ff7a00','#111');
-  endzone(Y(100),'#006e64','SKULLCRUSHERS','#aafff2','#053a35');
+  endzone(Y(100),'#006e64',TEAM_YOU.name,'#aafff2','#053a35');
   // ---- yard lines ----
   for(let yd=5;yd<100;yd+=5){
     c.fillStyle=yd%10===0?'rgba(255,255,255,0.9)':'rgba(255,255,255,0.45)';
@@ -1880,7 +1880,7 @@ function drawHUD(){
   if(G.score.you!==G._ly||G.score.cpu!==G._lc){
     const was=Math.sign(G._ly-G._lc), now2=Math.sign(G.score.you-G.score.cpu);
     if(now2!==was&&now2!==0&&(G._ly||G._lc)){ // not the game's first score
-      bigText(now2>0?'SKULLCRUSHERS TAKE THE LEAD!':TEAM_CPU.name+' TAKE THE LEAD...',
+      bigText(now2>0?TEAM_YOU.name+' TAKE THE LEAD!':TEAM_CPU.name+' TAKE THE LEAD...',
         {y:H*0.6,size:22,color:now2>0?'#7dff6a':'#b06aff',dur:1.5});
       if(now2>0) sfx.cheer();
     }
@@ -1890,7 +1890,7 @@ function drawHUD(){
   const ss=20+(G.scorePop>0?Math.sin(G.scorePop*12)*5:0);
   ctx.fillStyle='rgba(8,8,14,0.92)'; ctx.fillRect(0,0,W,54);
   ctx.fillStyle='#00b8a6'; ctx.fillRect(8,8,14,14);
-  pixelText('SKL '+G.score.you,30,16,ss,'#fff',null,false);
+  pixelText(TEAM_YOU.abbr+' '+G.score.you,30,16,ss,'#fff',null,false);
   ctx.fillStyle=TEAM_CPU.jersey; ctx.fillRect(130,8,14,14);
   pixelText(TEAM_CPU.abbr+' '+G.score.cpu,152,16,ss,'#fff',null,false);
   // berserk vignette
@@ -2194,9 +2194,9 @@ function drawTitle(dt){
       drawWord(A.very,veryCx,lineY,fitS,1,rot);
     }
   }
-  pixelText('SMASHVILLE SKULLCRUSHERS',W/2,H*0.62,18,'#00e5cf',null,true);
+  pixelText(TEAM_YOU.city+' '+TEAM_YOU.name,W/2,H*0.62,18,'#00e5cf',null,true);
   pixelText('VS',W/2,H*0.645,14,'#888',null,true);
-  pixelText('BONE COUNTY BRUISERS',W/2,H*0.67,18,'#b06aff',null,true);
+  pixelText(TEAMS[0].city+' '+TEAMS[0].name,W/2,H*0.67,18,'#b06aff',null,true);
   if(t>IMP&&Math.floor(G.titleT*2)%2===0)
     pixelText('TAP TO START',W/2,H*0.78,28,'#fff','#000',true);
   const sr=seriesText();
@@ -2304,7 +2304,7 @@ function advanceTournament(){ // you won — settle the rest of the round
   for(const m of T.matches){
     if(m[0]===TEAM_YOU||m[1]===TEAM_YOU){
       winners.push(TEAM_YOU);
-      res.push('SKL DEF '+(m[0]===TEAM_YOU?m[1]:m[0]).abbr+'  '+G.score.you+'—'+G.score.cpu);
+      res.push(TEAM_YOU.abbr+' DEF '+(m[0]===TEAM_YOU?m[1]:m[0]).abbr+'  '+G.score.you+'—'+G.score.cpu);
     } else {
       const aw=Math.random()<m[0].pow/(m[0].pow+m[1].pow);
       const w=aw?m[0]:m[1], l=aw?m[1]:m[0];
@@ -2700,7 +2700,7 @@ function frame(now){
       const idx=Math.min(L2.cards.length-1,Math.floor(L2.t/0.75));
       const who=L2.cards[idx];
       ctx.fillStyle='#0b0b1c';ctx.fillRect(0,0,W,H);
-      pixelText('YOUR 1994 SMASHVILLE SKULLCRUSHERS',W/2,90,20,'#00e5cf','#000',true);
+      pixelText('YOUR 1994 '+TEAM_YOU.city+' '+TEAM_YOU.name,W/2,90,20,'#00e5cf','#000',true);
       pixelText('STARTING LINEUP',W/2,120,16,'#888',null,true);
       if(idx!==L2.lastIdx){ L2.lastIdx=idx; tone(523+idx*60,0.12,'square',0.1); }
       drawBigGuy(W/2,H*0.38,TEAM_YOU,'run',false,true);
@@ -2712,7 +2712,7 @@ function frame(now){
       break; }
     case 'mode': {
       if(buttons.length===0){
-        buttons.push({id:'mode_quick',rect:true,x:40,y:H*0.40,w:W-80,h:88,label:'QUICK GAME',sub:'THE CLASSIC GRUDGE: VS THE BRUISERS'});
+        buttons.push({id:'mode_quick',rect:true,x:40,y:H*0.40,w:W-80,h:88,label:'QUICK GAME',sub:'THE CLASSIC GRUDGE: VS THE '+TEAMS[0].name});
         buttons.push({id:'mode_tourney',rect:true,x:40,y:H*0.40+104,w:W-80,h:88,label:'TOURNAMENT',sub:'THE 1994 INVITATIONAL: 8 TEAMS, 1 CROWN'});
         buttons.push({id:'mode_blitz',rect:true,x:40,y:H*0.40+208,w:W-80,h:88,label:'BLITZ TOURNAMENT',sub:'SUDDEN DEATH. DOWN 7–3. TD OR GO HOME.'});
       }
@@ -2799,9 +2799,9 @@ function frame(now){
           spawnLite(fx,600-fy+120);
         }
       }
-      pixelText(win?'SKULLCRUSHERS':TEAM_CPU.name,W/2,H*0.18,40,win?'#00e5cf':TEAM_CPU.stripe,'#000',true);
+      pixelText(win?TEAM_YOU.name:TEAM_CPU.name,W/2,H*0.18,40,win?'#00e5cf':TEAM_CPU.stripe,'#000',true);
       pixelText(G.ot?'WIN IN OT!':'WIN!',W/2,H*0.24,48,'#fff200','#000',true);
-      pixelText('FINAL: SKL '+G.score.you+' — '+TEAM_CPU.abbr+' '+G.score.cpu,W/2,H*0.34,24,'#fff',null,true);
+      pixelText('FINAL: '+TEAM_YOU.abbr+' '+G.score.you+' — '+TEAM_CPU.abbr+' '+G.score.cpu,W/2,H*0.34,24,'#fff',null,true);
       if(!win&&G.ot)
         pixelText('SUDDEN DEATH. YOU HAD YOUR CHANCE.',W/2,H*0.385,14,'#999',null,true);
       const sr=seriesText();
@@ -2821,7 +2821,7 @@ function frame(now){
     case 'boxscore': {
       ctx.fillStyle='#0b0b1c';ctx.fillRect(0,0,W,H);
       pixelText('BOX SCORE',W/2,64,30,'#fff200','#000',true);
-      pixelText('SKL '+G.score.you+' — '+TEAM_CPU.abbr+' '+G.score.cpu,W/2,98,18,'#aaa',null,true);
+      pixelText(TEAM_YOU.abbr+' '+G.score.you+' — '+TEAM_CPU.abbr+' '+G.score.cpu,W/2,98,18,'#aaa',null,true);
       const gs=G.gstats||{}, car=loadCareers();
       const v=(s,k)=>(s&&s[k])||0;
       let y=150;
