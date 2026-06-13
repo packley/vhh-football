@@ -497,6 +497,11 @@ cv.addEventListener('contextmenu',e=>e.preventDefault());
 // belt and suspenders: any touch release anywhere also tries the unlock
 document.addEventListener('touchend',()=>{ audioInit(); unlockAudio(); },{passive:true});
 document.addEventListener('click',()=>{ audioInit(); unlockAudio(); },{passive:true});
+// iOS suspends the audio context when you switch tabs/apps — wake it on return
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&AU.on){ try{ AU.ctx.resume(); }catch(e){} }
+});
+window.addEventListener('focus',()=>{ if(AU.on){ try{ AU.ctx.resume(); }catch(e){} } });
 
 function moveVec(){
   let x=0,y=0;
@@ -842,10 +847,10 @@ function setupPlay(type){
       rb.marker='C'; G.receivers.push(rb);
     }
   }
-  // carrier
+  // carrier (assigned now; the ball arrives on the snap)
   if(type==='run'||type==='pa'){
     // QB takes the snap; the back crosses the mesh point (and takes it, or doesn't)
-    qb.hasBall=true; G.carrier=qb;
+    G.carrier=qb;
     G.handoffPending=true; G.rbRef=rb;
     G.fakeHandoff=(type==='pa');
     G.passWindow=(type==='pa');
@@ -854,12 +859,24 @@ function setupPlay(type){
       wrB.blockTarget=db2; wrB.blockT=rnd(1.4,2.8);
     }
   } else {
-    qb.hasBall=true; G.carrier=qb;
+    G.carrier=qb;
   }
+  qb.hasBall=false;                 // not yet — the ball is on the ground at center
   G.camY=yd2y(L)-H*0.55;
+  // pre-snap: hold the formation and wait for the player to hike it
+  G.preSnap=true; G.snapHiking=false;
+  G.snapBall={x:240,y0:yd2y(L+0.6),y1:qb.y,t:0};
+  setState('snap');
+}
+function hikeBall(){
+  if(!G.preSnap||G.snapHiking) return;
+  G.snapHiking=true; G.snapBall.t=0; sfx.hike();
+}
+function goLive(){
+  G.preSnap=false; G.snapHiking=false;
+  G.carrier.hasBall=true;
   G.playLive=true;
   setState('live');
-  sfx.hike();
   makeLiveButtons();
 }
 function makeLiveButtons(){
@@ -900,6 +917,7 @@ function onPressKey(k){
     if(k==='e') doJuke(1);  // E = cut right
   }
   if((k==='enter'||k===' ')&&['title','intro','howto','dead','gameover'].includes(G.state)) advanceTap();
+  if((k==='enter'||k===' ')&&G.state==='snap') hikeBall(); // hut!
   if(G.state==='playcall'&&/^[1-5]$/.test(k)){ // keyboard play-calling
     const b=buttons[+k-1];
     if(b) onButton(b.id);
@@ -907,7 +925,7 @@ function onPressKey(k){
   if(G.state==='kickmeter'&&(k===' '||k==='enter')) taps.push({x:W/2,y:H/2});
 }
 function startSnap(type){
-  setState('snap'); G.pendingPlay=type;
+  setupPlay(type); // builds the formation and holds pre-snap until you hike it
 }
 
 /* ---------------- truck & throw ---------------- */
@@ -986,7 +1004,7 @@ function endPlay(msg,opts){
   G.deadOpts=opts;
   if(opts.td){
     sfx.cheer();
-    bigText('TOUCHDOWN!!',{size:46,color:'#fff200',dur:2.1});
+    bigText(G.conversion?'GOT IT!!':'TOUCHDOWN!!',{size:46,color:'#fff200',dur:2.1}); // 2pt try isn't a TD
     G.celebBase=G.carrier.y; G.carrier.state='idle'; G.dive=null;
   }
   if(!opts.silent) sfx.whistle();
@@ -2442,11 +2460,24 @@ function frame(now){
       G.camY=lerp(G.camY,yd2y(G.losYd)-H*0.55,1-Math.pow(0.9,dt*60));
       drawPlaycall();
       break;
-    case 'snap':
-      drawField(G.camY);drawHUD();
-      pixelText('HUT... HUT...',W/2,H*0.45,34,'#fff','#000',true);
-      if(G.t>0.5) setupPlay(G.pendingPlay);
-      break;
+    case 'snap': {
+      const b=G.snapBall;
+      if(G.snapHiking){ b.t+=dt; if(b.t>=0.2){ goLive(); break; } }
+      drawField(G.camY);
+      for(const p of G.players) drawPlayer(p,G.camY);
+      // the football: on the ground at center, then snapped back to the QB
+      const k=G.snapHiking?Math.min(b.t/0.2,1):0;
+      const by=lerp(b.y0,b.y1,k)-Math.sin(k*Math.PI)*9; // a little arc on the way back
+      ctx.save(); ctx.translate(b.x,by-G.camY); ctx.rotate(G.snapHiking?b.t*42:0);
+      ctx.fillStyle='#8a4b1f'; ctx.fillRect(-4,-3,8,6); ctx.fillStyle='#fff'; ctx.fillRect(-1,-3,2,6);
+      ctx.restore();
+      drawHUD();
+      if(!G.snapHiking){
+        pixelText('HUT... HUT...',W/2,H*0.40,28,'#fff','#000',true);
+        if(Math.floor(G.t*3)%2===0) pixelText('TAP TO HIKE',W/2,H*0.86,28,'#fff200','#000',true);
+        if(tapped) hikeBall();
+      }
+      break; }
     case 'live':
       if(dt>0&&G.playLive) updateLive(dt);
       drawField(G.camY);
