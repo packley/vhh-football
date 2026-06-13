@@ -1183,7 +1183,10 @@ function modeFromSim(){
 }
 function endOfYourDrive(){
   if(G.suddenDeath){ finishGame(); return; } // one drive was the whole game
-  if(G.ot){ finishGame(); return; }
+  if(G.ot){
+    if(G.score.you>G.score.cpu){ finishGame(); return; } // you scored — you win it
+    G.otDefense=true; startSimDrive(); return;            // you didn't: the Bruisers get their crack
+  }
   if(G.lastChance){ // the last chance is spent, however it went
     G.lastChance=false;
     if(G.score.you===G.score.cpu){ G.ot=true; G.quarter=5;
@@ -1251,6 +1254,12 @@ function simResultLines(){
 }
 function fmtClock(c){ c=Math.max(0,Math.ceil(c)); return Math.floor(c/60)+':'+(c%60<10?'0':'')+c%60; }
 function endQuarter(){
+  if(G.otDefense){ // resolving the Bruisers' sudden-death possession
+    G.otDefense=false;
+    if(G.score.cpu>G.score.you){ finishGame(); return; } // they answered — walk-off, you lose
+    queueBanner(['STILL TIED!','SUDDEN DEATH ROLLS ON','BACK TO YOU'],()=>startYourDrive('kickoff'));
+    return;
+  }
   G.quarter++;
   if(G.quarter>4){
     const margin=G.score.cpu-G.score.you;
@@ -2324,7 +2333,7 @@ function resetGame(){
   G.returnPlay=false;G.kickFlight=null;G.lastSimOutcome=null;
   G.convChoice=false;G.conversion=false;G.kick=null;G.rampage=0;
   G._ly=0;G._lc=0;G.fdDraw=undefined;G.halftimeDone=false;G.lastChance=false;
-  G.kickChoice=false;G.simBoost=false;G.timeouts=3;G.clockRunning=false;
+  G.kickChoice=false;G.simBoost=false;G.timeouts=3;G.clockRunning=false;G.otDefense=false;
   G.gstats={};G.playCtx=null;G.suddenDeath=false;
   G.warn30Used=false;G.warn30Pending=false;G.drivePlays=0;G.driveYds=0;G.driveVhh=0;
   G.rexOut=false;G.rexOutPending=false;G.fakeHandoff=false;
@@ -2791,10 +2800,10 @@ function frame(now){
         }
       }
       pixelText(win?'SKULLCRUSHERS':TEAM_CPU.name,W/2,H*0.18,40,win?'#00e5cf':TEAM_CPU.stripe,'#000',true);
-      pixelText(win?'WIN!':(G.score.you===G.score.cpu?'WIN IN OT!':'WIN!'),W/2,H*0.24,48,'#fff200','#000',true);
+      pixelText(G.ot?'WIN IN OT!':'WIN!',W/2,H*0.24,48,'#fff200','#000',true);
       pixelText('FINAL: SKL '+G.score.you+' — '+TEAM_CPU.abbr+' '+G.score.cpu,W/2,H*0.34,24,'#fff',null,true);
-      if(!win&&G.score.you===G.score.cpu)
-        pixelText('OT RULE: SCORE OR LOSE. YOU KNOW WHAT YOU DID.',W/2,H*0.385,14,'#999',null,true);
+      if(!win&&G.ot)
+        pixelText('SUDDEN DEATH. YOU HAD YOUR CHANCE.',W/2,H*0.385,14,'#999',null,true);
       const sr=seriesText();
       if(sr) pixelText(sr,W/2,H*0.59,17,'#fff200',null,true);
       pixelText('VERY HARD HITS DELIVERED: '+G.vhhCount,W/2,H*0.44,20,'#7dff6a',null,true);
