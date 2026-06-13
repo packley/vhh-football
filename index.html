@@ -1942,7 +1942,7 @@ function drawIntro(dt){
       const k=clamp((t-9.0)/0.18,0,1);
       ctx.save();ctx.translate(W/2,H*0.40);ctx.scale(1.7-0.7*k,1.7-0.7*k);ctx.globalAlpha=k;
       pixelText('BUT NEITHER OF THEM',0,-18,25,'#fff','#000',true);
-      pixelText('COULD DO COMPUTERS.',0,16,25,'#fff','#000',true);
+      pixelText('KNEW HOW TO DO COMPUTERS.',0,16,25,'#fff','#000',true);
       ctx.restore();ctx.globalAlpha=1;
       if(!G.introCatchDone){G.introCatchDone=true;sfx.boom();shake=12;}
     }
