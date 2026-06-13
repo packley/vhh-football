@@ -379,22 +379,22 @@ function realStartIntroMusic(el){ // el = seconds of intro already elapsed (late
   };
   const thump=(start,vol)=>{ oscAt(72,'sine',vol||0.45,start,start+0.4,{slideTo:36}); };
   // ominous drone swelling under the text, sustained through the blackout,
-  // cut dead exactly when UNTIL NOW. slams (10.2s)
-  oscAt(55,'sawtooth',0.10,0,10.2,{swell:3.0,lp:420});
-  oscAt(55.7,'sawtooth',0.08,0,10.2,{swell:3.0,lp:420});
-  oscAt(27.5,'sine',0.22,0,10.2,{swell:3.0});
+  // cut dead exactly when UNTIL NOW. slams (13.8s)
+  oscAt(55,'sawtooth',0.10,0,13.8,{swell:3.5,lp:420});
+  oscAt(55.7,'sawtooth',0.08,0,13.8,{swell:3.5,lp:420});
+  oscAt(27.5,'sine',0.22,0,13.8,{swell:3.5});
   // dark minor chord creeping in under the verse (D-F-A)
-  oscAt(73.4,'sawtooth',0.055,2.7,10.2,{swell:4.0,lp:500});
-  oscAt(87.3,'sawtooth',0.055,4.4,10.2,{swell:3.4,lp:500});
-  oscAt(110,'sawtooth',0.055,5.4,10.2,{swell:3.0,lp:500});
-  // timpani hit on each text line
-  [0.6,1.7,2.7,4.4,5.4,7.0].forEach(s=>thump(s,0.5));
+  oscAt(73.4,'sawtooth',0.055,3.6,13.8,{swell:5.0,lp:500});
+  oscAt(87.3,'sawtooth',0.055,7.0,13.8,{swell:4.0,lp:500});
+  oscAt(110,'sawtooth',0.055,10.4,13.8,{swell:3.0,lp:500});
+  // timpani hit on each text line (both pages)
+  [0.8,2.2,3.6,7.0,8.4,10.4].forEach(s=>thump(s,0.5));
   // the riser: builds under the lingering punchline, climbs through the
   // darkness, and peaks exactly on the UNTIL NOW. slam
-  oscAt(70,'sawtooth',0.09,7.4,10.2,{slideTo:950,swell:2.6,lp:1500});
-  oscAt(70.6,'sawtooth',0.06,7.4,10.2,{slideTo:956,swell:2.6,lp:1500});
-  // heartbeat thumps while the doomed man jogs (impact lands at ~14.4)
-  [12.7,13.4,13.95,14.25].forEach((s,i)=>thump(s,0.3+i*0.07));
+  oscAt(70,'sawtooth',0.09,10.6,13.8,{slideTo:950,swell:2.8,lp:1500});
+  oscAt(70.6,'sawtooth',0.06,10.6,13.8,{slideTo:956,swell:2.8,lp:1500});
+  // heartbeat thumps while the doomed man jogs (impact lands at ~18.2)
+  [16.5,17.2,17.75,18.05].forEach((s,i)=>thump(s,0.3+i*0.07));
 }
 function stopIntroMusic(){
   G.introMusicWanted=false;
@@ -1924,21 +1924,26 @@ function drawIntro(dt){
   G.introT+=dt;
   const t=G.introT;
   ctx.fillStyle='#000';ctx.fillRect(0,0,W,H);
-  const fadeLine=(txt,start,y,size,color)=>{
-    if(t>start){ ctx.globalAlpha=clamp((t-start)/0.9,0,1); pixelText(txt,W/2,y,size,color,null,true); ctx.globalAlpha=1; }
+  const fadeLine=(txt,start,y,size,color,fadeOut)=>{
+    if(t<start) return;
+    let a=clamp((t-start)/1.1,0,1);                       // slower fade-in
+    if(fadeOut&&t>fadeOut) a*=clamp(1-(t-fadeOut)/0.5,0,1); // and fade the whole page back out
+    if(a<=0) return;
+    ctx.globalAlpha=a; pixelText(txt,W/2,y,size,color,null,true); ctx.globalAlpha=1;
   };
-  if(t<9.4){
-    // the dream, the catch, the punchline — each lingers as the music builds
-    fadeLine('IN 1994, TWO FRIENDS SET OUT',0.6,H*0.28,21,'#ddd');
-    fadeLine('TO DEVELOP THE GREATEST',1.7,H*0.345,22,'#ddd');
-    fadeLine('VIDEO FOOTBALL GAME EVER MADE.',2.7,H*0.41,21,'#fff');
-    fadeLine('BUT NEITHER OF THEM',4.4,H*0.52,22,'#ddd');
-    fadeLine('KNEW HOW TO DO COMPUTERS.',5.4,H*0.585,22,'#ddd');
-    fadeLine('SO THEY ONLY DID THE COVER ART.',7.0,H*0.70,20,'#888');
-  } else if(t<11.0){
+  if(t<13.0){
+    // PAGE ONE — the dream (reveals slowly, then dissolves to black)
+    fadeLine('IN 1994, TWO FRIENDS SET OUT',0.8,H*0.34,21,'#ddd',6.0);
+    fadeLine('TO DEVELOP THE GREATEST',2.2,H*0.41,22,'#ddd',6.0);
+    fadeLine('VIDEO FOOTBALL GAME EVER MADE.',3.6,H*0.48,21,'#fff',6.0);
+    // PAGE TWO — the catch (fresh screen, after the dream fades)
+    fadeLine('BUT NEITHER OF THEM',7.0,H*0.40,22,'#ddd');
+    fadeLine('KNEW HOW TO DO COMPUTERS.',8.4,H*0.47,22,'#ddd');
+    fadeLine('SO THEY ONLY DID THE COVER ART.',10.4,H*0.59,20,'#888'); // ...revealed underneath
+  } else if(t<14.8){
     // darkness, crescendo still climbing... then:
-    if(t>10.2){
-      const k=clamp((t-10.2)/0.25,0,1);
+    if(t>13.8){
+      const k=clamp((t-13.8)/0.25,0,1);
       ctx.save();ctx.translate(W/2,H*0.48);ctx.scale(2.2-1.2*k,2.2-1.2*k);ctx.globalAlpha=k;
       pixelText('UNTIL NOW.',0,0,38,'#fff200','#000',true);
       ctx.restore();ctx.globalAlpha=1;
@@ -1953,7 +1958,7 @@ function drawIntro(dt){
     for(let x=20;x<W;x+=70)ctx.fillRect(x,gy+24,3,80);
     // crowd
     for(let y=0;y<70;y+=8)for(let x=0;x<W;x+=8) if((x*7+y*13)%5<2){ctx.fillStyle=['#444','#665','#556'][(x+y)%3];ctx.fillRect(x,gy-118+y,5,5);}
-    const ts=t-11.0;
+    const ts=t-14.8;
     const impactT=3.4, FREEZE=0.2; // a longer, happier jog — more song before the consequences
     const SPD=48;                   // px/sec — a leisurely, doomed amble
     const ix=70+SPD*impactT;        // ~233: contact lands left of center, room to see it coming
