@@ -2058,7 +2058,7 @@ function drawIntro(dt){
       const fx=ix-pe*237, fy=gy+4-Math.sin(Math.PI*pe/0.8)*100;
       drawBigGuy(fx,fy,TEAM_YOU,'launched',false,false,-(pe/0.8)*(Math.PI*2+1.6));
       if(ps>=0.8&&!G.introLandDone){G.introLandDone=true;sfx.thud();spawnDust(fx,fy+10);shake=6;}
-      if(ps>1.05&&ps<2.4){
+      if(ps>0.75&&ps<3.7){
         pixelText('YOWZGEES!!',Math.max(fx,40)+30,fy-46+Math.sin(ps*12)*2,20,'#fff200','#000',true);
         if(!G.introYowzDone){G.introYowzDone=true;voiceYowzgees();}
       }
@@ -2075,7 +2075,7 @@ function drawIntro(dt){
         pixelText('HITTING FOOTBALL',W/2,H*0.81,40,'#fff200','#7a1010',true);
         if(!G.introTitleDone){G.introTitleDone=true;sfx.boom();sfx.fanfare();shake=14;}
       }
-      if(ps>2.6){ stopIntroMusic(); setState('title'); }
+      if(ps>3.9){ stopIntroMusic(); setState('title'); } // let the full YOWZGEES land before we cut
     }
   }
   pixelText('TAP TO SKIP',W/2,H-28,14,'#555',null,true);
