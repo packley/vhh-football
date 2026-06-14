@@ -1239,6 +1239,7 @@ const SIM_DEF=[
 // the opponent's possession is a series of open-field 1-on-1 tackles. read his
 // move, slide to mirror, WRAP (safe) or BIG HIT (fumble shot, but whiff = he's gone).
 const DEF_Y=628;                          // where you stand
+const DEF_READY=1.1;                       // a beat to get set before he runs
 function startSimDrive(){
   const desperate=G.score.cpu-G.score.you>=9;
   let hard=clamp(TEAM_CPU.pow!==undefined?TEAM_CPU.pow:0.55,0,1);
@@ -1257,8 +1258,9 @@ function startDefenseRep(){
   // more jukes/trucks (harder reads) as the opponent's quality rises
   const pool=d.hard>0.6?['cut','juke','juke','spin','truck','truck']:['cut','cut','juke','juke','spin','truck'];
   const move=pick(pool), realDir=Math.random()<0.5?-1:1;
-  d.carrier={move,realDir,fakeDir:-realDir,t:0,x:240,y:150,resolved:false,
-    approach:lerp(1.75,1.05,d.hard)*(move==='truck'?0.82:1)};
+  let approach=lerp(3.3,2.2,d.hard)*(move==='truck'?0.88:1); // slow enough to actually read
+  if(!G.defSeen) approach+=0.7;             // first time ever? extra slow
+  d.carrier={move,realDir,fakeDir:-realDir,t:0,x:240,y:150,resolved:false,approach};
   d.phase='rep';
 }
 function carrierX(c,a){ // his lateral path: the fake, then the real cut
@@ -1273,9 +1275,11 @@ function carrierX(c,a){ // his lateral path: the fake, then the real cut
   return lerp(240+c.realDir*74,240-c.realDir*74,smooth((a-0.55)/0.45));
 }
 function resolveTackle(type){ // 'wrap' | 'hit' | null(missed)
-  const d=G.def, c=d.carrier; if(!c||c.resolved) return; c.resolved=true;
-  const a=clamp(c.t/c.approach,0,1), cx=carrierX(c,a), dx=Math.abs(d.defX-cx);
-  const early=a<0.64;                       // lunged before he committed
+  const d=G.def, c=d.carrier; if(!c||c.resolved) return;
+  if(type&&c.t<DEF_READY) return;           // he hasn't even started — ignore itchy presses
+  c.resolved=true;
+  const a=clamp((c.t-DEF_READY)/c.approach,0,1), cx=carrierX(c,a), dx=Math.abs(d.defX-cx);
+  const early=a<0.5;                         // lunged before he committed
   let tackled=false,fumble=false,trucked=false;
   if(type==='wrap'){
     if(c.move==='truck'&&!early) trucked=true;        // wrapping a freight train = pancaked
@@ -1306,6 +1310,7 @@ function endDefense(kind){
   else { if(d.yToGoal<=38){ outcome='fg';pts=3;lines=[pick(SIM_DEF),TEAM_CPU.name+' SETTLE FOR 3']; }
          else { outcome='punt';pts=0;lines=[pick(SIM_DEF),'THREE AND OUT!']; } }
   d.pts=pts; d.result={outcome,pts,lines}; d.phase='result'; d.resultT=0; d.scored=false;
+  G.defSeen=true; // the rookie's first series is over; normal speed from here
   buttons=[];
 }
 function fmtClock(c){ c=Math.max(0,Math.ceil(c)); return Math.floor(c/60)+':'+(c%60<10?'0':'')+c%60; }
@@ -2583,31 +2588,40 @@ function frame(now){
         if(d.resultT>2.4){ G.lastSimOutcome=d.result.outcome; endQuarter(); }
         break;
       }
-      // ---- a rep: read him, slide, strike ----
+      // ---- a rep: get set, read him, strike ----
       const c=d.carrier; c.t+=dt;
-      const a=clamp(c.t/c.approach,0,1);
+      const ready=c.t<DEF_READY;                  // the snap-and-set beat
+      const a=clamp((c.t-DEF_READY)/c.approach,0,1);
       // move your defender: drag to mirror, or arrows
       if(stick.active) d.defX=lerp(d.defX,clamp(stick.lastX,FX0+12,FX1-12),1-Math.pow(0.0015,dt));
       if(keys['arrowleft']||keys['a']) d.defX-=320*dt;
       if(keys['arrowright']||keys['d']) d.defX+=320*dt;
       d.defX=clamp(d.defX,FX0+12,FX1-12);
-      c.x=carrierX(c,a); c.y=lerp(150,DEF_Y+8,a);
-      // buttons
+      c.x=ready?240:carrierX(c,a); c.y=ready?170+Math.sin(c.t*8)*3:lerp(170,DEF_Y+8,a);
       if(!buttons.some(b=>b.id==='d_wrap'))
         buttons=[{id:'d_wrap',x:92,y:H-94,r:42,label:'WRAP',kind:'round'},
                  {id:'d_hit',x:W-92,y:H-94,r:42,label:'BIG HIT',kind:'round'}];
+      // the strike line you must time him to
+      ctx.fillStyle='rgba(255,80,80,0.6)'; ctx.fillRect(FX0,DEF_Y-46,FX1-FX0,3);
       // draw: defender, carrier, his lean tell
       drawPlayer({team:TEAM_YOU,x:d.defX,y:DEF_Y,state:'idle',animT:G.t*3,moving:true,helmetOn:true},0);
-      const vx=carrierX(c,a)-carrierX(c,Math.max(0,a-0.03));
-      drawPlayer({team:TEAM_CPU,x:c.x,y:c.y,state:'idle',animT:c.t*3,moving:true,helmetOn:true,hasBall:true},0);
-      if(Math.abs(vx)>0.6){ // a chevron telegraphing which way he's leaning
-        ctx.fillStyle='#fff200'; const ax=c.x+Math.sign(vx)*16, ay=c.y;
-        ctx.beginPath();ctx.moveTo(ax+Math.sign(vx)*7,ay);ctx.lineTo(ax,ay-6);ctx.lineTo(ax,ay+6);ctx.fill();
+      drawPlayer({team:TEAM_CPU,x:c.x,y:c.y,state:'idle',animT:c.t*3,moving:!ready,helmetOn:true,hasBall:true},0);
+      if(!ready){
+        const vx=carrierX(c,a)-carrierX(c,Math.max(0,a-0.03));
+        if(Math.abs(vx)>0.5){ ctx.fillStyle='#fff200'; const ax=c.x+Math.sign(vx)*18,ay=c.y;
+          ctx.beginPath();ctx.moveTo(ax+Math.sign(vx)*8,ay);ctx.lineTo(ax,ay-7);ctx.lineTo(ax,ay+7);ctx.fill(); }
       }
-      // strike prompt
-      const inZone=a>=0.66&&a<1.0;
-      pixelText(inZone?'STRIKE NOW!':'READ HIM...',W/2,120,inZone?26:18,inZone?'#ff5050':'#ccc','#000',true);
-      pixelText(Math.max(1,Math.round(d.yToGoal))+' YDS TO THE END ZONE',W/2,150,13,'#aaa',null,true);
+      // prompts
+      const inZone=!ready&&a>=0.55&&a<1.0;
+      pixelText('DEFENDER '+d.rep+' OF '+d.maxReps,W/2,108,15,'#9fd8ff',null,true);
+      pixelText(ready?'GET SET — DRAG TO MIRROR HIM':(inZone?'STRIKE!  WRAP OR BIG HIT':'READ HIS MOVE...'),
+        W/2,134,inZone?24:18,inZone?'#ff5050':'#fff','#000',true);
+      pixelText(Math.max(1,Math.round(d.yToGoal))+' YDS TO THE END ZONE',W/2,160,13,'#aaa',null,true);
+      if(!G.defSeen){ // first-time control hints
+        pixelText('WRAP = SAFE TACKLE',146,H-150,13,'#7dff6a',null,true);
+        pixelText('BIG HIT = FUMBLE SHOT',W-150,H-150,13,'#ff8080',null,true);
+        pixelText('(BIG HIT A TRUCKING BACK — WRAP GETS RUN OVER)',W/2,H-128,12,'#aaa',null,true);
+      }
       drawHUD(); drawFxScreen(); drawButtons();
       if(a>=1.0&&!c.resolved) resolveTackle(null); // he blew past you untouched
       break; }
