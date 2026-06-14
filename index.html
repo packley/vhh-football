@@ -916,6 +916,10 @@ function onPressKey(k){
     if(k==='q') doJuke(-1); // Q = cut left
     if(k==='e') doJuke(1);  // E = cut right
   }
+  if(G.state==='defense'&&G.def&&G.def.phase==='rep'){
+    if(k==='z') resolveTackle('wrap');
+    if(k==='x'||k===' ') resolveTackle('hit');
+  }
   if((k==='enter'||k===' ')&&['title','intro','howto','dead','gameover'].includes(G.state)) advanceTap();
   if((k==='enter'||k===' ')&&G.state==='snap') hikeBall(); // hut!
   if(G.state==='playcall'&&/^[1-5]$/.test(k)){ // keyboard play-calling
@@ -1231,44 +1235,78 @@ const SIM_DEF=[
   'BLOWN UP IN THE BACKFIELD!',
   'HELMET FLIES OFF! (NOT YOURS)',
 ];
+/* ---------------- THE GAUNTLET: you play defense ---------------- */
+// the opponent's possession is a series of open-field 1-on-1 tackles. read his
+// move, slide to mirror, WRAP (safe) or BIG HIT (fumble shot, but whiff = he's gone).
+const DEF_Y=628;                          // where you stand
 function startSimDrive(){
-  const roll=Math.random();
-  let outcome,pts=0;
-  const desperate=G.score.cpu-G.score.you>=9; // rubber band: your defense plays angry when you're down big
-  if(G.simBoost){ // they fell on your onside kick: short field, hot hands
-    G.simBoost=false;
-    if(roll<0.42){outcome='td';pts=7;}
-    else if(roll<0.68){outcome='fg';pts=3;}
-    else if(roll<0.80){outcome='stuffed';}
-    else {outcome='punt';}
-  } else if(desperate){
-    if(roll<0.22){outcome='td';pts=7;}
-    else if(roll<0.40){outcome='fg';pts=3;}
-    else if(roll<0.64){outcome='stuffed';}
-    else {outcome='punt';}
-  } else {
-    const p=TEAM_CPU.pow!==undefined?TEAM_CPU.pow:0.55; // better teams score more
-    const tdP=0.18+0.22*p, fgP=tdP+0.16+0.10*p;
-    if(roll<tdP){outcome='td';pts=7;}
-    else if(roll<fgP){outcome='fg';pts=3;}
-    else if(roll<fgP+0.14){outcome='stuffed';}
-    else {outcome='punt';}
-  }
-  G.sim={t:0,step:0,outcome,pts,lines:[pick(SIM_FLAVOR),
-    Math.random()<0.5?TEAM_CPU.star+(outcome==='td'?' SMELLS BLOOD...':' DROPS BACK...'):pick(SIM_FLAVOR)]};
-  if(desperate) G.sim.lines[0]='YOUR DEFENSE IS PLAYING ANGRY...';
-  // Q4/OT: you get ONE shot to blow the play up yourself
-  G.sim.qte=(G.quarter>=4)?{pos:0,dir:1,done:false,hit:false}:null;
-  G.sim.resultLines=simResultLines(); // pick once — re-rolling every frame made the text strobe
-  setState('simdrive');
+  const desperate=G.score.cpu-G.score.you>=9;
+  let hard=clamp(TEAM_CPU.pow!==undefined?TEAM_CPU.pow:0.55,0,1);
+  let startY=rnd(54,66);                   // yards he must cover to your end zone
+  if(G.simBoost){ G.simBoost=false; startY=rnd(28,40); hard=Math.min(1,hard+0.2); } // onside: short field, hot hands
+  if(desperate) hard=Math.max(0.18,hard-0.28); // down big? your D plays angry (easier reads)
+  G.def={phase:'intro',introT:0,rep:0,maxReps:3,yToGoal:startY,defX:240,hard,
+    carrier:null,pts:0,result:null,resultT:0,scored:false,
+    epitaph:G.drivePlays?('YOUR DRIVE: '+G.drivePlays+' PLAYS, '+G.driveYds+' YDS, '+(G.vhhCount-(G.driveVhh||0))+' FELONIES'):null};
+  buttons=[];
+  setState('defense');
 }
-function simResultLines(){
-  switch(G.sim.outcome){
-    case 'td': return [TEAM_CPU.name+' TOUCHDOWN','+7 (BOOO!)'];
-    case 'fg': return [TEAM_CPU.name+' FIELD GOAL','+3'];
-    case 'stuffed': return [pick(SIM_DEF),'YOUR DEFENSE FORCES A TURNOVER!'];
-    default: return ['THREE AND OUT',TEAM_CPU.name+' PUNT'];
+function smooth(x){ x=clamp(x,0,1); return x*x*(3-2*x); }
+function startDefenseRep(){
+  const d=G.def; d.rep++;
+  // more jukes/trucks (harder reads) as the opponent's quality rises
+  const pool=d.hard>0.6?['cut','juke','juke','spin','truck','truck']:['cut','cut','juke','juke','spin','truck'];
+  const move=pick(pool), realDir=Math.random()<0.5?-1:1;
+  d.carrier={move,realDir,fakeDir:-realDir,t:0,x:240,y:150,resolved:false,
+    approach:lerp(1.75,1.05,d.hard)*(move==='truck'?0.82:1)};
+  d.phase='rep';
+}
+function carrierX(c,a){ // his lateral path: the fake, then the real cut
+  if(c.move==='truck') return 240+Math.sin(a*22)*5;            // straight at you, daring the hit
+  if(c.move==='cut')   return 240+c.realDir*92*smooth(a);      // honest drift to a lane
+  if(c.move==='juke'){
+    if(a<0.6) return 240+c.fakeDir*55*smooth(a/0.6);           // sells the fake...
+    return lerp(240+c.fakeDir*55,240+c.realDir*118,smooth((a-0.6)/0.4)); // ...then cuts back HARD
   }
+  // spin: commits one way, then spins all the way across
+  if(a<0.55) return 240+c.realDir*74*smooth(a/0.55);
+  return lerp(240+c.realDir*74,240-c.realDir*74,smooth((a-0.55)/0.45));
+}
+function resolveTackle(type){ // 'wrap' | 'hit' | null(missed)
+  const d=G.def, c=d.carrier; if(!c||c.resolved) return; c.resolved=true;
+  const a=clamp(c.t/c.approach,0,1), cx=carrierX(c,a), dx=Math.abs(d.defX-cx);
+  const early=a<0.64;                       // lunged before he committed
+  let tackled=false,fumble=false,trucked=false;
+  if(type==='wrap'){
+    if(c.move==='truck'&&!early) trucked=true;        // wrapping a freight train = pancaked
+    else tackled=!early&&dx<42;                        // forgiving lane, no fumble
+  } else if(type==='hit'){
+    tackled=!early&&dx<27;                              // tight window; a square hit even stuffs a truck
+    if(tackled) fumble=Math.random()<0.35;
+  }
+  if(tackled){
+    if(type==='hit'){ G.vhhCount++; carnage(cx,c.y,TEAM_CPU,true); }
+    else { sfx.crunch(); shake=8; spawnStars(cx,c.y,6); }
+    if(fumble){ endDefense('fumble'); return; }
+    d.yToGoal=Math.max(2,d.yToGoal-(type==='hit'?0:Math.round(rnd(1,4))));
+    endDefense('stop'); return;
+  }
+  // he beat you
+  if(trucked){ G.vhhTaken++; carnage(d.defX,DEF_Y,TEAM_YOU,true); bigText('TRUCKED!!',{y:H*0.4,size:30,color:'#ff5050'}); }
+  else { sfx.thud(); bigText(pick(['BROKEN TACKLE!','HE’S THROUGH!','MISSED HIM!','SEE YA, SUCKER!']),{y:H*0.4,size:24,color:'#ff5050',dur:0.8}); }
+  d.yToGoal-=Math.round(rnd(16,26));
+  if(d.yToGoal<=0||d.rep>=d.maxReps){ endDefense('td'); return; }
+  startDefenseRep();                        // next defender takes a crack
+}
+function endDefense(kind){
+  const d=G.def; let outcome,pts,lines;
+  if(kind==='td'){ outcome='td';pts=7;lines=[TEAM_CPU.name+' SCORE','HOUSE CALL. +7','...BOOOO.']; }
+  else if(kind==='fumble'){ outcome='stuffed';pts=0;G.ffCount=(G.ffCount||0)+1;
+    lines=['FUMBLE!!!','YOU KNOCKED IT LOOSE','SKULLCRUSHERS— ER, ACKLEY BALL!!']; sfx.td(); sfx.cheer(); }
+  else { if(d.yToGoal<=38){ outcome='fg';pts=3;lines=[pick(SIM_DEF),TEAM_CPU.name+' SETTLE FOR 3']; }
+         else { outcome='punt';pts=0;lines=[pick(SIM_DEF),'THREE AND OUT!']; } }
+  d.pts=pts; d.result={outcome,pts,lines}; d.phase='result'; d.resultT=0; d.scored=false;
+  buttons=[];
 }
 function fmtClock(c){ c=Math.max(0,Math.ceil(c)); return Math.floor(c/60)+':'+(c%60<10?'0':'')+c%60; }
 function endQuarter(){
@@ -2352,6 +2390,7 @@ function resetGame(){
   G.convChoice=false;G.conversion=false;G.kick=null;G.rampage=0;
   G._ly=0;G._lc=0;G.fdDraw=undefined;G.halftimeDone=false;G.lastChance=false;
   G.kickChoice=false;G.simBoost=false;G.timeouts=3;G.clockRunning=false;G.otDefense=false;
+  G.def=null;G.ffCount=0;
   G.gstats={};G.playCtx=null;G.suddenDeath=false;
   G.warn30Used=false;G.warn30Pending=false;G.drivePlays=0;G.driveYds=0;G.driveVhh=0;
   G.rexOut=false;G.rexOutPending=false;G.fakeHandoff=false;
@@ -2360,6 +2399,13 @@ function resetGame(){
 const _origOnButton=onButton;
 onButton=function(id){
   if(!id) return;
+  if(G.state==='defense'){
+    if(G.def&&G.def.phase==='rep'){
+      if(id==='d_wrap') resolveTackle('wrap');
+      if(id==='d_hit') resolveTackle('hit');
+    }
+    return;
+  }
   if(G.state==='mode'){
     sfx.ui();
     if(id==='mode_quick'){ G.tour=null; setOpponent(TEAMS[0]); resetGame(); showLineup(()=>startYourDrive()); }
@@ -2509,44 +2555,61 @@ function frame(now){
       b.lines.forEach((ln,i)=>pixelText(ln,W/2,H*0.40+i*36,i===0?30:24,i===0?'#fff200':'#fff','#000',true));
       if(b.t>b.dur){ const nx=b.next; G.banner=null; nx(); }
       break; }
-    case 'simdrive': {
-      const s=G.sim; s.t+=dt;
-      drawField(G.camY); drawHUD(); drawFxScreen();
-      ctx.fillStyle='rgba(0,0,0,0.7)';ctx.fillRect(0,H*0.25,W,H*0.42);
-      pixelText(TEAM_CPU.name+' BALL...',W/2,H*0.31,26,'#b06aff','#000',true);
-      if(G.drivePlays) // your drive's broadcast epitaph
-        pixelText('YOUR DRIVE: '+G.drivePlays+' PLAYS, '+G.driveYds+' YDS, '+(G.vhhCount-(G.driveVhh||0))+' FELONIES',
-          W/2,H*0.27,13,'#888',null,true);
-      if(s.t>0.8)pixelText(s.lines[0],W/2,H*0.40,18,'#ccc',null,true);
-      if(s.t>1.7)pixelText(s.lines[1],W/2,H*0.46,18,'#ccc',null,true);
-      if(s.t>1.0&&!s.c1){s.c1=true;sfx.thud();}
-      // Q4/OT: the one-tap defensive stand — nail the sweeping marker to blow up the play
-      if(s.qte&&!s.qte.done&&s.t>0.8&&s.t<2.6){
-        s.qte.pos+=s.qte.dir*dt*1.2;
-        if(s.qte.pos>1){s.qte.pos=1;s.qte.dir=-1;} if(s.qte.pos<0){s.qte.pos=0;s.qte.dir=1;}
-        const bx=W*0.15,bw=W*0.7,by=H*0.70;
-        pixelText('TAP TO BLOW IT UP!',W/2,by-26,18,'#7dff6a','#000',true);
-        ctx.fillStyle='rgba(255,255,255,0.2)';ctx.fillRect(bx,by,bw,16);
-        ctx.fillStyle='rgba(125,255,106,0.5)';ctx.fillRect(bx+bw*0.39,by,bw*0.22,16);
-        ctx.fillStyle='#fff';ctx.fillRect(bx+bw*s.qte.pos-2,by-4,4,24);
-        if(tapped){
-          s.qte.done=true;
-          if(Math.abs(s.qte.pos-0.5)<0.11){
-            s.qte.hit=true; s.outcome='stuffed'; s.pts=0;
-            s.resultLines=[pick(SIM_DEF),'YOU BLEW IT UP YOURSELF!'];
-            sfx.megacrunch(); shake=14; zoomPunch=0.08;
-          } else {
-            s.resultLines[1]=(s.resultLines[1]||'')+' (YOU MISSED THE TACKLE)';
-            sfx.thud();
-          }
-        }
+    case 'defense': {
+      const d=G.def;
+      // ---- field: a top-down lane, yard lines streaking up to sell the speed ----
+      ctx.fillStyle='#10401a'; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle='#0a2e12'; ctx.fillRect(0,0,FX0,H); ctx.fillRect(FX1,0,W-FX1,H);
+      const scroll=(d.carrier?d.carrier.t*300:G.t*60)%56;
+      ctx.fillStyle='rgba(255,255,255,0.16)';
+      for(let y=-56+scroll;y<H;y+=56) ctx.fillRect(FX0,y,FX1-FX0,3);
+
+      if(d.phase==='intro'){
+        d.introT+=dt;
+        if(d.epitaph) pixelText(d.epitaph,W/2,H*0.30,13,'#9fd8ff','#000',true);
+        pixelText(TEAM_CPU.name+' BALL',W/2,H*0.40,28,TEAM_CPU.stripe,'#000',true);
+        if(d.introT>0.7) pixelText('HE BREAKS INTO THE OPEN!',W/2,H*0.47,18,'#fff','#000',true);
+        if(d.introT>1.2) pixelText('— LAST LINE OF DEFENSE —',W/2,H*0.54,16,'#7dff6a','#000',true);
+        drawHUD();
+        if(d.introT>1.9) startDefenseRep();
+        break;
       }
-      if(s.t>1.9&&!s.c2){s.c2=true;if(s.outcome==='stuffed'){sfx.megacrunch();shake=10;}else sfx.thud();}
-      if(s.t>2.7){
-        s.resultLines.forEach((ln,i)=>pixelText(ln,W/2,H*0.54+i*30,22,i===0?'#fff200':'#fff','#000',true));
-        if(!s.scored){s.scored=true;G.score.cpu+=s.pts;if(s.pts>0)sfx.fail();else sfx.firstDown();}
+      if(d.phase==='result'){
+        d.resultT+=dt;
+        if(!d.scored){ d.scored=true; G.score.cpu+=d.pts; if(d.pts>0)sfx.fail(); else if(d.result.outcome==='punt'||d.result.outcome==='stuffed')sfx.firstDown(); }
+        ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(0,H*0.34,W,H*0.28);
+        d.result.lines.forEach((ln,i)=>pixelText(ln,W/2,H*0.40+i*30,i===0?26:20,i===0?'#fff200':'#fff','#000',true));
+        drawHUD(); drawFxScreen();
+        if(d.resultT>2.4){ G.lastSimOutcome=d.result.outcome; endQuarter(); }
+        break;
       }
-      if(s.t>4.2){ G.lastSimOutcome=s.outcome; G.sim=null; endQuarter(); }
+      // ---- a rep: read him, slide, strike ----
+      const c=d.carrier; c.t+=dt;
+      const a=clamp(c.t/c.approach,0,1);
+      // move your defender: drag to mirror, or arrows
+      if(stick.active) d.defX=lerp(d.defX,clamp(stick.lastX,FX0+12,FX1-12),1-Math.pow(0.0015,dt));
+      if(keys['arrowleft']||keys['a']) d.defX-=320*dt;
+      if(keys['arrowright']||keys['d']) d.defX+=320*dt;
+      d.defX=clamp(d.defX,FX0+12,FX1-12);
+      c.x=carrierX(c,a); c.y=lerp(150,DEF_Y+8,a);
+      // buttons
+      if(!buttons.some(b=>b.id==='d_wrap'))
+        buttons=[{id:'d_wrap',x:92,y:H-94,r:42,label:'WRAP',kind:'round'},
+                 {id:'d_hit',x:W-92,y:H-94,r:42,label:'BIG HIT',kind:'round'}];
+      // draw: defender, carrier, his lean tell
+      drawPlayer({team:TEAM_YOU,x:d.defX,y:DEF_Y,state:'idle',animT:G.t*3,moving:true,helmetOn:true},0);
+      const vx=carrierX(c,a)-carrierX(c,Math.max(0,a-0.03));
+      drawPlayer({team:TEAM_CPU,x:c.x,y:c.y,state:'idle',animT:c.t*3,moving:true,helmetOn:true,hasBall:true},0);
+      if(Math.abs(vx)>0.6){ // a chevron telegraphing which way he's leaning
+        ctx.fillStyle='#fff200'; const ax=c.x+Math.sign(vx)*16, ay=c.y;
+        ctx.beginPath();ctx.moveTo(ax+Math.sign(vx)*7,ay);ctx.lineTo(ax,ay-6);ctx.lineTo(ax,ay+6);ctx.fill();
+      }
+      // strike prompt
+      const inZone=a>=0.66&&a<1.0;
+      pixelText(inZone?'STRIKE NOW!':'READ HIM...',W/2,120,inZone?26:18,inZone?'#ff5050':'#ccc','#000',true);
+      pixelText(Math.max(1,Math.round(d.yToGoal))+' YDS TO THE END ZONE',W/2,150,13,'#aaa',null,true);
+      drawHUD(); drawFxScreen(); drawButtons();
+      if(a>=1.0&&!c.resolved) resolveTackle(null); // he blew past you untouched
       break; }
     case 'kickmeter': { // the operation: snap, hold, laces out — THEN you aim
       const k=G.kick;
@@ -2840,6 +2903,7 @@ function frame(now){
       pixelText('VERY HARD HITS DELIVERED: '+G.vhhCount,W/2,H*0.44,20,'#7dff6a',null,true);
       pixelText('VERY HARD HITS RECEIVED: '+G.vhhTaken,W/2,H*0.49,20,'#ff8080',null,true);
       pixelText('LONGEST PLAY: '+G.longestPlay+' YDS',W/2,H*0.54,20,'#9fd8ff',null,true);
+      if(G.ffCount) pixelText('FUMBLES FORCED: '+G.ffCount,W/2,H*0.585,18,'#7dff6a',null,true);
       pixelText(win?'TEXT YOUR FRIEND. TALK TRASH.':'REMATCH. IMMEDIATELY.',W/2,H*0.66,22,'#fff200','#000',true);
       if(G.tour) pixelText(win?ROUND_NAMES[G.tour.round]+' — SURVIVED':'ELIMINATED FROM THE INVITATIONAL',
         W/2,H*0.715,16,win?'#7dff6a':'#ff8080',null,true);
