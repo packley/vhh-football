@@ -1267,20 +1267,28 @@ function startSimDrive(){
 function smooth(x){ x=clamp(x,0,1); return x*x*(3-2*x); }
 function startDefenseRep(){
   const d=G.def; d.rep++;
-  // more jukes/trucks (harder reads) as the opponent's quality rises
-  const pool=d.hard>0.6?['cut','juke','juke','spin','truck','truck']:['cut','cut','juke','juke','spin','truck'];
+  // a real mix: straight downhill, honest cuts, jukes, double-moves, spins, trucks.
+  // tougher backs (higher pow) bring more deception.
+  const pool=d.hard>0.6?['straight','cut','juke','juke','double','spin','truck','truck']
+                       :['straight','straight','cut','cut','juke','juke','double','spin','truck'];
   const move=pick(pool), realDir=Math.random()<0.5?-1:1;
-  let approach=lerp(3.3,2.2,d.hard)*(move==='truck'?0.88:1); // slow enough to actually read
+  let approach=lerp(3.3,2.2,d.hard)*(move==='truck'?0.88:move==='straight'?1.05:1);
   if(!G.defSeen) approach+=0.7;             // first time ever? extra slow
   d.carrier={move,realDir,fakeDir:-realDir,t:0,x:240,y:150,resolved:false,approach};
   d.phase='rep';
 }
-function carrierX(c,a){ // his lateral path: the fake, then the real cut
-  if(c.move==='truck') return 240+Math.sin(a*22)*5;            // straight at you, daring the hit
-  if(c.move==='cut')   return 240+c.realDir*92*smooth(a);      // honest drift to a lane
+function carrierX(c,a){ // his path: straight, the fake, or the real cut
+  if(c.move==='straight') return 240+c.realDir*18*Math.sin(a*7); // north-south runner, just a wiggle
+  if(c.move==='truck')    return 240+Math.sin(a*22)*5;           // straight at you, daring the hit
+  if(c.move==='cut')      return 240+c.realDir*92*smooth(a);     // honest drift to a lane
   if(c.move==='juke'){
-    if(a<0.6) return 240+c.fakeDir*55*smooth(a/0.6);           // sells the fake...
+    if(a<0.6) return 240+c.fakeDir*55*smooth(a/0.6);             // sells the fake...
     return lerp(240+c.fakeDir*55,240+c.realDir*118,smooth((a-0.6)/0.4)); // ...then cuts back HARD
+  }
+  if(c.move==='double'){ // juke one way, cut back, then cut AGAIN — ends on the fake side
+    if(a<0.34) return 240+c.fakeDir*48*smooth(a/0.34);
+    if(a<0.64) return lerp(240+c.fakeDir*48,240+c.realDir*60,smooth((a-0.34)/0.30));
+    return lerp(240+c.realDir*60,240+c.fakeDir*112,smooth((a-0.64)/0.36));
   }
   // spin: commits one way, then spins all the way across
   if(a<0.55) return 240+c.realDir*74*smooth(a/0.55);
