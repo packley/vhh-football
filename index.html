@@ -465,6 +465,16 @@ function endPointer(e,cancel){
     // (iOS pointercancel — system gestures, palm rejection — must never count as input)
     const dx=stick.lastX-stick.downX, dy=stick.lastY-stick.downY, d=Math.hypot(dx,dy);
     const quick=performance.now()-stick.downT<280;
+    if(G.state==='defense'){ // a swipe IS the tackle — aim by where it points, power by speed
+      if(!cancel&&d>22){
+        const speed=d/Math.max(1,performance.now()-stick.downT)*1000; // px/s
+        const power=clamp((speed-450)/2100,0,1);
+        defStrike(clamp(stick.lastX,FX0+10,FX1-10),power);
+      }
+      stick.active=false; stick.dx=0; stick.dy=0;
+      for(const id in btnHeld) if(btnHeld[id]===e.pointerId) delete btnHeld[id];
+      return;
+    }
     if(!cancel&&quick&&d<20){
       handleLiveTap({x:stick.lastX,y:stick.lastY}); // tap = dive (when you're the runner)
     } else if(!cancel&&quick&&d>72&&stick.preRunDir){
@@ -580,6 +590,8 @@ function updateFx(dt){
       else if(p.t>1.0){ p.landed=true; p.dur=7; p.vx=0; p.vy=0; p.vr=0; }
       else { p.vy+=700*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.rot+=p.vr*dt; }
     }
+    else if(p.kind==='fball'){ p.vy+=900*dt; p.x+=p.vx*dt; p.y+=p.vy*dt; p.rot+=p.vr*dt;
+      if(p.y>p.floor){ p.y=p.floor; p.vy*=-0.45; p.vx*=0.7; p.vr*=0.7; } }
     else if(p.kind==='bulb'||p.kind==='ghost'){} // stationary
     else { const d2=Math.pow(0.92,dt*60); p.x+=p.vx*dt; p.y+=p.vy*dt; p.vx*=d2; p.vy*=d2; }
     if(p.t>p.dur)parts.splice(i,1);
@@ -593,6 +605,10 @@ function drawFxWorld(camY){
       ctx.globalAlpha=clamp(p.dur-p.t,0,1); // litter fades out at the end
       drawHelmetIcon(0,0,10,p.color,p.stripe);
       ctx.globalAlpha=1; ctx.restore();
+    } else if(p.kind==='fball'){
+      ctx.save();ctx.translate(p.x,sy);ctx.rotate(p.rot);ctx.scale(1.6,1.6);
+      ctx.fillStyle='#8a4b1f';ctx.fillRect(-5,-3,10,6);ctx.fillStyle='#fff';ctx.fillRect(-1,-3,2,6);
+      ctx.restore();
     } else if(p.kind==='bulb'){
       if(p.t>p.blinkAt&&p.t<p.blinkAt+0.12){ ctx.fillStyle='#fff'; ctx.fillRect(p.x,sy,3,3); }
     } else if(p.kind==='ghost'){
@@ -648,12 +664,13 @@ function drawHelmetIcon(x,y,r,color,stripe){
   ctx.fillStyle='#ccc'; ctx.fillRect(x+r*0.35,y+r*0.1,r*0.75,r*0.22); // facemask
 }
 // little top-down player, ~14px tall
-function drawPlayer(p,camY){
+function drawPlayer(p,camY,scale){
   const sy=p.y-camY;
-  if(sy<-30||sy>H+30) return;
+  if(sy<-40||sy>H+40) return;
   const t=p.team, run=Math.sin(p.animT*16)*(p.moving?1:0);
   ctx.save();
   ctx.translate(Math.round(p.x),Math.round(sy));
+  if(scale&&scale!==1) ctx.scale(scale,scale);
   if(p.state==='prone'||p.state==='flying'||p.state==='diving'){
     ctx.rotate(p.state==='prone'?Math.PI/2:p.spinRot);
   }
@@ -917,8 +934,9 @@ function onPressKey(k){
     if(k==='e') doJuke(1);  // E = cut right
   }
   if(G.state==='defense'&&G.def&&G.def.phase==='rep'){
-    if(k==='z') resolveTackle('wrap');
-    if(k==='x'||k===' ') resolveTackle('hit');
+    const aim=G.def.aimCursor!==undefined?G.def.aimCursor:240;
+    if(k==='z') defStrike(aim,0.2);          // soft wrap
+    if(k==='x'||k===' ') defStrike(aim,0.9); // big hit
   }
   if((k==='enter'||k===' ')&&['title','intro','howto','dead','gameover'].includes(G.state)) advanceTap();
   if((k==='enter'||k===' ')&&G.state==='snap') hikeBall(); // hut!
@@ -1232,6 +1250,7 @@ const SIM_DEF=[
 // move, slide to mirror, WRAP (safe) or BIG HIT (fumble shot, but whiff = he's gone).
 const DEF_Y=628;                          // where you stand
 const DEF_READY=1.1;                       // a beat to get set before he runs
+const DEF_SCALE=2.3;                        // defenders loom large in this view
 function startSimDrive(){
   G.offense='them';
   const desperate=G.score.cpu-G.score.you>=9;
@@ -1267,33 +1286,34 @@ function carrierX(c,a){ // his lateral path: the fake, then the real cut
   if(a<0.55) return 240+c.realDir*74*smooth(a/0.55);
   return lerp(240+c.realDir*74,240-c.realDir*74,smooth((a-0.55)/0.45));
 }
-function resolveTackle(type){ // 'wrap' | 'hit' | null(missed)
-  const d=G.def, c=d.carrier; if(!c||c.resolved) return;
-  if(type&&c.t<DEF_READY) return;           // he hasn't even started — ignore itchy presses
+// you SWIPE to tackle: where it points = your aim, how fast you swipe = how hard you hit
+// (and how hard you whiff). Outcome is computed here; the hit/fumble plays out in 'strike'.
+function defStrike(aimX,power){
+  const d=G.def, c=d.carrier;
+  if(!d||d.phase!=='rep'||!c||c.resolved||c.t<DEF_READY) return; // not live, or itchy
   c.resolved=true;
-  const a=clamp((c.t-DEF_READY)/c.approach,0,1), cx=carrierX(c,a), dx=Math.abs(d.defX-cx);
-  const early=a<0.5;                         // lunged before he committed
-  let tackled=false,fumble=false,trucked=false;
-  if(type==='wrap'){
-    if(c.move==='truck'&&!early) trucked=true;        // wrapping a freight train = pancaked
-    else tackled=!early&&dx<42;                        // forgiving lane, no fumble
-  } else if(type==='hit'){
-    tackled=!early&&dx<27;                              // tight window; a square hit even stuffs a truck
-    if(tackled) fumble=Math.random()<0.35;
-  }
-  if(tackled){
-    if(type==='hit'){ G.vhhCount++; carnage(cx,c.y,TEAM_CPU,true); }
-    else { sfx.crunch(); shake=8; spawnStars(cx,c.y,6); }
-    if(fumble){ endDefense('fumble'); return; }
-    d.yToGoal=Math.max(2,d.yToGoal-(type==='hit'?0:Math.round(rnd(1,4))));
+  const a=clamp((c.t-DEF_READY)/c.approach,0,1), cx=carrierX(c,a);
+  const tol=lerp(52,20,power);               // a soft wrap has a wide net; a big hit must be precise
+  const early=a<0.42;                         // lunged before he committed
+  let tackled=!early&&Math.abs(aimX-cx)<tol, fumble=false, trucked=false;
+  if(tackled&&c.move==='truck'&&power<0.34){ tackled=false; trucked=true; } // arm-tackle a truck = pancaked
+  if(tackled) fumble=Math.random()<lerp(0.04,0.55,power); // harder hit, looser ball
+  d.strike={aimX,power,t:0,cx,cy0:c.y,fromX:d.defX,tackled,fumble,trucked,fired:false};
+  d.phase='strike';
+}
+function applyDefOutcome(){
+  const d=G.def, s=d.strike;
+  if(s.tackled){
+    if(s.fumble){ endDefense('fumble'); return; }
+    d.yToGoal=Math.max(2,d.yToGoal-(s.power>0.4?0:Math.round(rnd(1,4))));
     endDefense('stop'); return;
   }
-  // he beat you
-  if(trucked){ G.vhhTaken++; carnage(d.defX,DEF_Y,TEAM_YOU,true); bigText('TRUCKED!!',{y:H*0.4,size:30,color:'#ff5050'}); }
-  else { sfx.thud(); bigText(pick(['BROKEN TACKLE!','HE’S THROUGH!','MISSED HIM!','SEE YA, SUCKER!']),{y:H*0.4,size:24,color:'#ff5050',dur:0.8}); }
-  d.yToGoal-=Math.round(rnd(16,26));
+  d.yToGoal-=Math.round(lerp(15,30,s.power)); // a harder whiff = more open field behind you
   if(d.yToGoal<=0||d.rep>=d.maxReps){ endDefense('td'); return; }
-  startDefenseRep();                        // next defender takes a crack
+  startDefenseRep();
+}
+function spawnFumble(x,y){ // the ball squirts loose and bounces
+  parts.push({kind:'fball',x,y,vx:rnd(-170,170),vy:rnd(-240,-130),rot:0,vr:rnd(-16,16),t:0,dur:1.6,floor:y+46});
 }
 function endDefense(kind){
   const d=G.def; let outcome,pts,lines;
@@ -2411,13 +2431,7 @@ function resetGame(){
 const _origOnButton=onButton;
 onButton=function(id){
   if(!id) return;
-  if(G.state==='defense'){
-    if(G.def&&G.def.phase==='rep'){
-      if(id==='d_wrap') resolveTackle('wrap');
-      if(id==='d_hit') resolveTackle('hit');
-    }
-    return;
-  }
+  if(G.state==='defense') return; // defense is swipe-only now, no buttons
   if(G.state==='mode'){
     sfx.ui();
     if(id==='mode_quick'){ G.tour=null; setOpponent(TEAMS[0]); resetGame(); showLineup(()=>startYourDrive()); }
@@ -2594,42 +2608,57 @@ function frame(now){
         if(d.resultT>2.4){ afterDefense(); }
         break;
       }
-      // ---- a rep: get set, read him, strike ----
+      if(d.phase==='strike'){ // the lunge + the hit (or the whiff), animated
+        const s=d.strike, c2=d.carrier; s.t+=dt;
+        const IMPACT=0.18, DUR=s.tackled?0.7:0.55, lk=Math.min(s.t/IMPACT,1);
+        const dfx=lerp(s.fromX,s.aimX,smooth(lk));   // your defender flings toward the aim
+        let cgx=s.cx, cgy, cstate='idle', helm=true, hasBall=!s.fumble;
+        if(s.t<IMPACT){ cgy=lerp(s.cy0,DEF_Y-18,lk); }
+        else {
+          if(!s.fired){ s.fired=true;
+            if(s.tackled){ const mega=s.power>0.45; carnage(s.cx,DEF_Y-18,TEAM_CPU,mega); if(mega)G.vhhCount++;
+              if(s.fumble) spawnFumble(s.cx,DEF_Y-18); }
+            else if(s.trucked){ carnage(d.defX,DEF_Y,TEAM_YOU,true); G.vhhTaken++; }
+            else sfx.thud();
+          }
+          const pk=s.t-IMPACT;
+          if(s.tackled){ cgy=DEF_Y-18; cstate='prone'; helm=!(s.power>0.45); }
+          else { cgy=(DEF_Y-18)+pk*460; }              // he blows past, off the bottom
+        }
+        ctx.fillStyle='rgba(255,80,80,0.5)'; ctx.fillRect(FX0,DEF_Y-46,FX1-FX0,3);
+        drawPlayer({team:TEAM_CPU,x:cgx,y:cgy,state:cstate,spinRot:0,animT:c2.t*4,moving:!s.tackled,helmetOn:helm,hasBall},0,DEF_SCALE);
+        drawPlayer({team:TEAM_YOU,x:dfx,y:DEF_Y,state:(s.t>IMPACT&&!s.tackled)?'diving':'idle',spinRot:0,animT:G.t*5,moving:true,helmetOn:true},0,DEF_SCALE);
+        drawHUD(); drawFxWorld(0); drawFxScreen();
+        if(s.t>IMPACT) pixelText(s.tackled?(s.fumble?'FUMBLE!!':(s.power>0.45?'VERY HARD HIT!':'WRAPPED UP!')):(s.trucked?'TRUCKED!!':'WHIFF!'),
+          W/2,140,30,s.tackled?'#7dff6a':'#ff5050','#000',true);
+        if(s.t>DUR) applyDefOutcome();
+        break;
+      }
+      // ---- a rep: get set, read him, SWIPE to tackle ----
       const c=d.carrier; c.t+=dt;
       const ready=c.t<DEF_READY;                  // the snap-and-set beat
       const a=clamp((c.t-DEF_READY)/c.approach,0,1);
-      // move your defender: drag to mirror, or arrows
-      if(stick.active) d.defX=lerp(d.defX,clamp(stick.lastX,FX0+12,FX1-12),1-Math.pow(0.0015,dt));
-      if(keys['arrowleft']||keys['a']) d.defX-=320*dt;
-      if(keys['arrowright']||keys['d']) d.defX+=320*dt;
-      d.defX=clamp(d.defX,FX0+12,FX1-12);
-      c.x=ready?240:carrierX(c,a); c.y=ready?170+Math.sin(c.t*8)*3:lerp(170,DEF_Y+8,a);
-      if(!buttons.some(b=>b.id==='d_wrap'))
-        buttons=[{id:'d_wrap',x:92,y:H-94,r:42,label:'WRAP',kind:'round'},
-                 {id:'d_hit',x:W-92,y:H-94,r:42,label:'BIG HIT',kind:'round'}];
-      // the strike line you must time him to
-      ctx.fillStyle='rgba(255,80,80,0.6)'; ctx.fillRect(FX0,DEF_Y-46,FX1-FX0,3);
-      // draw: defender, carrier, his lean tell
-      drawPlayer({team:TEAM_YOU,x:d.defX,y:DEF_Y,state:'idle',animT:G.t*3,moving:true,helmetOn:true},0);
-      drawPlayer({team:TEAM_CPU,x:c.x,y:c.y,state:'idle',animT:c.t*3,moving:!ready,helmetOn:true,hasBall:true},0);
-      if(!ready){
-        const vx=carrierX(c,a)-carrierX(c,Math.max(0,a-0.03));
-        if(Math.abs(vx)>0.5){ ctx.fillStyle='#fff200'; const ax=c.x+Math.sign(vx)*18,ay=c.y;
-          ctx.beginPath();ctx.moveTo(ax+Math.sign(vx)*8,ay);ctx.lineTo(ax,ay-7);ctx.lineTo(ax,ay+7);ctx.fill(); }
-      }
-      // prompts
-      const inZone=!ready&&a>=0.55&&a<1.0;
-      pixelText('DEFENDER '+d.rep+' OF '+d.maxReps,W/2,108,15,'#9fd8ff',null,true);
-      pixelText(ready?'GET SET — DRAG TO MIRROR HIM':(inZone?'STRIKE!  WRAP OR BIG HIT':'READ HIS MOVE...'),
-        W/2,134,inZone?24:18,inZone?'#ff5050':'#fff','#000',true);
-      pixelText(Math.max(1,Math.round(d.yToGoal))+' YDS TO THE END ZONE',W/2,160,13,'#aaa',null,true);
-      if(!G.defSeen){ // first-time control hints
-        pixelText('WRAP = SAFE TACKLE',146,H-150,13,'#7dff6a',null,true);
-        pixelText('BIG HIT = FUMBLE SHOT',W-150,H-150,13,'#ff8080',null,true);
-        pixelText('(BIG HIT A TRUCKING BACK — WRAP GETS RUN OVER)',W/2,H-128,12,'#aaa',null,true);
-      }
-      drawHUD(); drawFxScreen(); drawButtons();
-      if(a>=1.0&&!c.resolved) resolveTackle(null); // he blew past you untouched
+      // keyboard aim cursor (mobile just swipes)
+      if(keys['arrowleft']||keys['a']) d.aimCursor=(d.aimCursor||240)-360*dt;
+      if(keys['arrowright']||keys['d']) d.aimCursor=(d.aimCursor||240)+360*dt;
+      if(d.aimCursor!==undefined) d.aimCursor=clamp(d.aimCursor,FX0+12,FX1-12);
+      c.x=ready?240:carrierX(c,a); c.y=ready?180+Math.sin(c.t*8)*3:lerp(180,DEF_Y-18,a);
+      buttons=[];
+      ctx.fillStyle='rgba(255,80,80,0.5)'; ctx.fillRect(FX0,DEF_Y-46,FX1-FX0,3); // the strike line
+      drawPlayer({team:TEAM_YOU,x:240,y:DEF_Y,state:'idle',animT:G.t*3,moving:true,helmetOn:true},0,DEF_SCALE);
+      drawPlayer({team:TEAM_CPU,x:c.x,y:c.y,state:'idle',animT:c.t*3,moving:!ready,helmetOn:true,hasBall:true},0,DEF_SCALE);
+      if(d.aimCursor!==undefined){ ctx.strokeStyle='#fff200';ctx.lineWidth=2;ctx.beginPath();ctx.arc(d.aimCursor,DEF_Y-18,18,0,7);ctx.stroke(); }
+      if(!ready){ const vx=carrierX(c,a)-carrierX(c,Math.max(0,a-0.03));
+        if(Math.abs(vx)>0.5){ ctx.fillStyle='#fff200'; const ax=c.x+Math.sign(vx)*26,ay=c.y;
+          ctx.beginPath();ctx.moveTo(ax+Math.sign(vx)*11,ay);ctx.lineTo(ax,ay-10);ctx.lineTo(ax,ay+10);ctx.fill(); } }
+      const inZone=!ready&&a>=0.5&&a<1.0;
+      pixelText('DEFENDER '+d.rep+' OF '+d.maxReps,W/2,104,15,'#9fd8ff',null,true);
+      pixelText(ready?'GET SET...':(inZone?'SWIPE AT HIM — HARD!':'READ HIS MOVE...'),
+        W/2,130,inZone?26:18,inZone?'#ff5050':'#fff','#000',true);
+      pixelText(Math.max(1,Math.round(d.yToGoal))+' YDS TO THE END ZONE',W/2,156,13,'#aaa',null,true);
+      if(!G.defSeen) pixelText('SWIPE TOWARD HIM TO TACKLE — FASTER = HARDER (BUT RISKIER)',W/2,H-120,12,'#aaa',null,true);
+      drawHUD(); drawFxScreen();
+      if(a>=1.0&&!c.resolved){ d.strike={aimX:240,power:0,t:0,cx:c.x,cy0:c.y,fromX:240,tackled:false,fumble:false,trucked:false,fired:false}; d.phase='strike'; } // he blew past untouched
       break; }
     case 'kickmeter': { // the operation: snap, hold, laces out — THEN you aim
       const k=G.kick;
