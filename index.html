@@ -1130,9 +1130,9 @@ function afterPlay(){
     return;
   }
   // tackled inbounds: the clock KEEPS RUNNING through the huddle.
-  // incompletions, OOB, scores, turnovers: it stops.
+  // incompletions, OOB, scores, turnovers: it stops. (0:00 doesn't cut the drive —
+  // the quarter rolls when this possession ends.)
   G.clockRunning=!!o.runoff;
-  if(G.clock<=0){ G.clockRunning=false; handleClockExpiry(); return; }
   if(G.rexOutPending){ // the trainers have seen enough
     G.rexOutPending=false; G.rexOut=true; G.clockRunning=false;
     queueBanner(['REX HAMBONE IS QUESTIONABLE','(HIS LEG IS ON BACKWARDS)','ENTER: CHET OATMEAL #44'],()=>setState('playcall'));
@@ -1147,28 +1147,20 @@ function afterPlay(){
 }
 // real football: a quarter ending mid-drive just rolls over — you KEEP the ball.
 // only the end of regulation (and OT) actually takes it away.
-function handleClockExpiry(){
-  if(G.quarter<4&&!G.ot){
-    const oldQ=G.quarter;
-    G.quarter++; G.clock=180; G.clockRunning=false;
-    const lines=['END OF Q'+oldQ,'DRIVE CONTINUES IN Q'+G.quarter,'SAME BALL. SAME DOWN. MORE VIOLENCE.'];
-    if(G.quarter===3&&!G.halftimeDone){ G.halftimeDone=true; lines[2]='HALFTIME SHOW: CANCELED. THE BAND IS SCARED.'; }
-    queueBanner(lines,()=>setState('playcall'));
-  } else if(G.ot){
-    queueBanner(['TIME EXPIRES','NO SCORE IN OVERTIME','THEM’S THE RULES'],()=>endOfYourDrive());
-  } else {
-    queueBanner(['TIME EXPIRES','END OF REGULATION'],()=>endOfYourDrive());
-  }
-}
+function handleClockExpiry(){ advanceQuarter(); } // kept for the victory-formation kneel
 function queueBanner(lines,next){
   G.banner={lines,t:0,dur:1.6,next};
   setState('banner');
 }
 
-/* ---------------- drives / quarters ---------------- */
+/* ---------------- drives / quarters ----------------
+   The quarter clock (QLEN) is the source of truth. Possessions ALTERNATE within a
+   quarter until it expires; then the quarter advances. The clock no longer ends a
+   drive mid-play — the drive you're on finishes, and the quarter rolls at the boundary. */
+const QLEN=180;
 function startYourDrive(mode){
   mode=mode||'kickoff';
-  G.clock=180; G.clockRunning=false; // 3:00 of REAL time — it runs while you dawdle in the huddle
+  G.offense='you'; G.clockRunning=false;     // clock is quarter-level now; paused until you snap
   G.fdDraw=undefined;
   G.drivePlays=0; G.driveYds=0; G.driveVhh=G.vhhCount;
   const q='Q'+G.quarter+(G.ot?' — OVERTIME':'')+' — YOUR POSSESSION';
@@ -1207,17 +1199,17 @@ function endOfYourDrive(){
   if(G.suddenDeath){ finishGame(); return; } // one drive was the whole game
   if(G.ot){
     if(G.score.you>G.score.cpu){ finishGame(); return; } // you scored — you win it
-    G.otDefense=true; startSimDrive(); return;            // you didn't: the Bruisers get their crack
+    G.otDefense=true; startSimDrive(); return;            // you didn't: they get their crack
   }
-  if(G.lastChance){ // the last chance is spent, however it went
+  if(G.lastChance){ // the final untimed shot is spent, however it went
     G.lastChance=false;
-    if(G.score.you===G.score.cpu){ G.ot=true; G.quarter=5;
-      queueBanner(['YOU TIED IT!','OVERTIME','SCORE OR LOSE'],()=>startYourDrive('kickoff'));
+    if(G.score.you===G.score.cpu){ G.ot=true; G.quarter=5; G.clock=QLEN;
+      queueBanner(['YOU TIED IT!','OVERTIME','SCORE OR LOSE'],()=>{G.offense='you';startYourDrive('kickoff');});
     } else finishGame();
     return;
   }
-  if(G.quarter>=4&&G.clock<=0){ endQuarter(); return; } // clock hit zero in the 4th: no Bruisers answer drive
-  startSimDrive();
+  if(G.clock<=0){ advanceQuarter(); return; } // the quarter expired during your drive
+  G.offense='them'; startSimDrive();           // their turn — clock keeps running
 }
 const SIM_FLAVOR=[
   'POUNDING THE ROCK...',
@@ -1241,6 +1233,7 @@ const SIM_DEF=[
 const DEF_Y=628;                          // where you stand
 const DEF_READY=1.1;                       // a beat to get set before he runs
 function startSimDrive(){
+  G.offense='them';
   const desperate=G.score.cpu-G.score.you>=9;
   let hard=clamp(TEAM_CPU.pow!==undefined?TEAM_CPU.pow:0.55,0,1);
   let startY=rnd(54,66);                   // yards he must cover to your end zone
@@ -1314,30 +1307,43 @@ function endDefense(kind){
   buttons=[];
 }
 function fmtClock(c){ c=Math.max(0,Math.ceil(c)); return Math.floor(c/60)+':'+(c%60<10?'0':'')+c%60; }
-function endQuarter(){
-  if(G.otDefense){ // resolving the Bruisers' sudden-death possession
+// called when the defensive possession (the gauntlet) finishes
+function afterDefense(){
+  G.lastSimOutcome=G.def.result.outcome;
+  if(G.otDefense){ // their sudden-death possession
     G.otDefense=false;
     if(G.score.cpu>G.score.you){ finishGame(); return; } // they answered — walk-off, you lose
-    queueBanner(['STILL TIED!','SUDDEN DEATH ROLLS ON','BACK TO YOU'],()=>startYourDrive('kickoff'));
+    queueBanner(['STILL TIED!','SUDDEN DEATH ROLLS ON','BACK TO YOU'],()=>{G.offense='you';startYourDrive('kickoff');});
     return;
   }
+  G.clock=Math.max(0,G.clock-(6+G.def.rep*10)); // their drive ate clock
+  if(G.clock<=0){ advanceQuarter(); return; }    // quarter's done
+  G.offense='you'; startYourDrive(modeFromSim()); // you get it back, same quarter
+}
+// the quarter clock has run out — roll to the next quarter (or end the game)
+function advanceQuarter(){
   G.quarter++;
-  if(G.quarter>4){
-    const margin=G.score.cpu-G.score.you;
-    if(G.score.you===G.score.cpu){ G.ot=true; G.quarter=5;
-      queueBanner(['TIED UP!','OVERTIME','SCORE OR LOSE'],()=>startYourDrive('kickoff'));
-    } else if(margin>0&&margin<=8&&G.clock>20){
-      // down one score with clock left: your defense buys you one more drive
-      G.quarter=4; G.lastChance=true;
-      G.clock=Math.max(8,G.clock-rnd(40,70)); // their possession burned most of it
-      const scored=G.lastSimOutcome==='td'||G.lastSimOutcome==='fg';
-      queueBanner(['YOUR DEFENSE GETS IT BACK!','LAST CHANCE — '+fmtClock(G.clock)+' LEFT','SAVE THE SEASON'],
-        ()=>setupReturn(scored?'kick':'punt'));
-    } else if(margin>0&&G.clock>0){
-      // they have the ball, the lead, and your fate: watch them kneel
-      queueBanner([TEAM_CPU.name+' KNEEL IT OUT','...','THAT’S THE GAME'],()=>{G.clock=0;finishGame();});
-    } else finishGame();
-  } else startYourDrive(G.quarter===3?'kickoff':modeFromSim()); // the 2nd half always opens with a kickoff
+  if(G.quarter>4){ endRegulation(); return; }
+  G.clock=QLEN; G.clockRunning=false; G.fdDraw=undefined;
+  if(G.quarter===3){ // 2nd-half kickoff: whoever did NOT receive to open the game now receives
+    G.halftimeDone=true;
+    const youGetIt=(G.recvFirst!=='you');
+    queueBanner(['END OF THE HALF','HALFTIME SHOW: CANCELED','THE BAND IS SCARED'],
+      ()=>{ if(youGetIt){G.offense='you';startYourDrive('kickoff');} else {G.offense='them';startSimDrive();} });
+  } else { // Q2 / Q4 — possession just alternates across the break
+    queueBanner(['END OF Q'+(G.quarter-1),'Q'+G.quarter+' BEGINS'],
+      ()=>{ if(G.offense==='you'){G.offense='them';startSimDrive();}
+            else {G.offense='you';startYourDrive(modeFromSim());} });
+  }
+}
+function endRegulation(){
+  const margin=G.score.cpu-G.score.you;
+  if(G.score.you===G.score.cpu){ G.ot=true; G.quarter=5; G.clock=QLEN;
+    queueBanner(['TIED AT THE GUN!','OVERTIME','SCORE OR LOSE'],()=>{G.offense='you';startYourDrive('kickoff');});
+  } else if(margin>0&&margin<=8&&G.offense==='them'){ // down one score, they ran the clock out: one untimed shot
+    G.quarter=4; G.lastChance=true; G.clock=Math.round(rnd(20,32));
+    queueBanner(['NO TIME ON THE CLOCK','ONE LAST CHANCE','SAVE THE SEASON'],()=>{G.offense='you';setupReturn('kick');});
+  } else finishGame();
 }
 function finishGame(){
   G.result=G.score.you>G.score.cpu?'win':'lose';
@@ -2396,6 +2402,7 @@ function resetGame(){
   G._ly=0;G._lc=0;G.fdDraw=undefined;G.halftimeDone=false;G.lastChance=false;
   G.kickChoice=false;G.simBoost=false;G.timeouts=3;G.clockRunning=false;G.otDefense=false;
   G.def=null;G.ffCount=0;
+  G.clock=QLEN;G.recvFirst='you';G.offense='you'; // you return the opening kickoff; they get the 2nd half
   G.gstats={};G.playCtx=null;G.suddenDeath=false;
   G.warn30Used=false;G.warn30Pending=false;G.drivePlays=0;G.driveYds=0;G.driveVhh=0;
   G.rexOut=false;G.rexOutPending=false;G.fakeHandoff=false;
@@ -2463,14 +2470,13 @@ function frame(now){
 
   if(hitstop>0){ hitstop-=raw; dt=0; } // freeze gameplay during a VERY HARD HIT
   updateFx(raw);                       // fx, shake and shouts always tick
-  // a running clock runs BETWEEN plays too — through the spot, the huddle, your indecision
+  // a running clock runs BETWEEN plays too — through the spot, the huddle, your indecision.
+  // it can reach 0:00 here, but the quarter only rolls when the current possession ends.
   if(!G.convChoice&&!G.kickChoice){
     if(G.state==='dead'&&G.deadOpts&&G.deadOpts.runoff&&G.clock>0)
       G.clock=Math.max(0,G.clock-raw);
-    else if(G.clockRunning&&(G.state==='playcall'||G.state==='snap')){
+    else if(G.clockRunning&&(G.state==='playcall'||G.state==='snap'))
       G.clock=Math.max(0,G.clock-raw);
-      if(G.clock<=0&&G.state==='playcall'){ G.clockRunning=false; handleClockExpiry(); }
-    }
   }
 
   ctx.save();
@@ -2585,7 +2591,7 @@ function frame(now){
         ctx.fillStyle='rgba(0,0,0,0.55)';ctx.fillRect(0,H*0.34,W,H*0.28);
         d.result.lines.forEach((ln,i)=>pixelText(ln,W/2,H*0.40+i*30,i===0?26:20,i===0?'#fff200':'#fff','#000',true));
         drawHUD(); drawFxScreen();
-        if(d.resultT>2.4){ G.lastSimOutcome=d.result.outcome; endQuarter(); }
+        if(d.resultT>2.4){ afterDefense(); }
         break;
       }
       // ---- a rep: get set, read him, strike ----
