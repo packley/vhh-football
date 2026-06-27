@@ -564,9 +564,9 @@ function carnage(x,y,team,mega){
   if(mega) spawnBulbs(10);
   const shout=pick(HIT_SHOUTS);
   bigText(shout,{y:H*0.34,size:mega?46:38});
-  // the announcer GROWLS the trash talk out loud — way more likely on the heinous ones
-  if(!G.shoutCd&&Math.random()<(mega?0.75:0.35)){
-    G.shoutCd=2.6; // breathe between insults so they don't pile up
+  // the announcer GROWLS the trash talk out loud — ALWAYS on the big ones, usually otherwise
+  if(!G.shoutCd&&Math.random()<(mega?1:0.7)){
+    G.shoutCd=1.2; // just enough breath so insults don't pile up
     speak(shout.toLowerCase().replace(/[!.’']/g,''),{pitch:0.7,rate:0.95,dur:1.0});
   }
   if(mega) sfx.crowd();
@@ -1091,6 +1091,7 @@ function afterPlay(){
     if(wasReturn){ stat(G.carrier.who,'retYds',Math.round(G.losYd)); stat(G.carrier.who,'retTD',1); }
     else attribute(G.losYd,true);
     G.score.you+=6; sfx.td();
+    G.shoutCd=0; speak('touchdown baby! suck on that!',{pitch:0.7,rate:0.95,dur:1.2}); // guaranteed voice line
     if(G.ot||G.suddenDeath){ // the six wins it, skip the formality
       queueBanner(['TOUCHDOWN',G.suddenDeath?'BALLGAME. WALK-OFF.':TEAM_YOU.name+' WIN IT!','+6'],()=>endOfYourDrive());
       return;
